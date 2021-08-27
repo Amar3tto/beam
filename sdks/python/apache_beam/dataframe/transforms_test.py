@@ -18,7 +18,6 @@ import typing
 import unittest
 
 import pandas as pd
-from past.builtins import unicode
 
 import apache_beam as beam
 from apache_beam import coders
@@ -64,7 +63,7 @@ def df_equal_to(expected):
 
 
 AnimalSpeed = typing.NamedTuple(
-    'AnimalSpeed', [('Animal', unicode), ('Speed', int)])
+    'AnimalSpeed', [('Animal', str), ('Speed', int)])
 coders.registry.register_coder(AnimalSpeed, coders.RowCoder)
 Nested = typing.NamedTuple(
     'Nested', [('id', int), ('animal_speed', AnimalSpeed)])
@@ -121,6 +120,30 @@ class TransformTest(unittest.TestCase):
       self.run_scenario(df, lambda df: df.groupby('Animal').mean())
     self.run_scenario(
         df, lambda df: df.loc[df.Speed > 25].groupby('Animal').sum())
+
+  def test_groupby_apply(self):
+    df = pd.DataFrame({
+        'group': ['a' if i % 5 == 0 or i % 3 == 0 else 'b' for i in range(100)],
+        'foo': [None if i % 11 == 0 else i for i in range(100)],
+        'bar': [None if i % 7 == 0 else 99 - i for i in range(100)],
+        'baz': [None if i % 13 == 0 else i * 2 for i in range(100)],
+    })
+
+    def median_sum_fn(x):
+      return (x.foo + x.bar).median()
+
+    describe = lambda df: df.describe()
+
+    self.run_scenario(df, lambda df: df.groupby('group').foo.apply(describe))
+    self.run_scenario(
+        df, lambda df: df.groupby('group')[['foo', 'bar']].apply(describe))
+    self.run_scenario(df, lambda df: df.groupby('group').apply(median_sum_fn))
+    self.run_scenario(
+        df,
+        lambda df: df.set_index('group').foo.groupby(level=0).apply(describe))
+    self.run_scenario(df, lambda df: df.groupby(level=0).apply(median_sum_fn))
+    self.run_scenario(
+        df, lambda df: df.groupby(lambda x: x % 3).apply(describe))
 
   def test_filter(self):
     df = pd.DataFrame({

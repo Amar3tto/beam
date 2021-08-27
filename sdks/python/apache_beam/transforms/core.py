@@ -19,20 +19,12 @@
 
 # pytype: skip-file
 
-from __future__ import absolute_import
-
 import copy
 import inspect
 import logging
 import random
-import sys
 import types
 import typing
-from builtins import map
-from builtins import object
-from builtins import range
-
-from past.builtins import unicode
 
 from apache_beam import coders
 from apache_beam import pvalue
@@ -80,11 +72,6 @@ if typing.TYPE_CHECKING:
   from apache_beam.transforms.trigger import AccumulationMode
   from apache_beam.transforms.trigger import DefaultTrigger
   from apache_beam.transforms.trigger import TriggerFn
-
-try:
-  import funcsigs  # Python 2 only.
-except ImportError:
-  funcsigs = None
 
 __all__ = [
     'DoFn',
@@ -315,10 +302,12 @@ class RestrictionProvider(object):
     return coders.registry.get_coder(object)
 
   def restriction_size(self, element, restriction):
-    """Returns the size of an element with respect to the given element.
+    """Returns the size of a restriction with respect to the given element.
 
     By default, asks a newly-created restriction tracker for the default size
     of the restriction.
+
+    The return value must be non-negative.
 
     This API is required to be implemented.
     """
@@ -326,6 +315,8 @@ class RestrictionProvider(object):
 
   def split_and_size(self, element, restriction):
     """Like split, but also does sizing, returning (restriction, size) pairs.
+
+    For each pair, size must be non-negative.
 
     This API is optional if ``split`` and ``restriction_size`` have been
     implemented.
@@ -386,12 +377,7 @@ def get_function_args_defaults(f):
     it doesn't include bound arguments and may follow function wrappers.
   """
   signature = get_signature(f)
-  # Fall back on funcsigs if inspect module doesn't have 'Parameter'; prefer
-  # inspect.Parameter over funcsigs.Parameter if both are available.
-  try:
-    parameter = inspect.Parameter
-  except AttributeError:
-    parameter = funcsigs.Parameter
+  parameter = inspect.Parameter
   # TODO(BEAM-5878) support kwonlyargs on Python 3.
   _SUPPORTED_ARG_TYPES = [
       parameter.POSITIONAL_ONLY, parameter.POSITIONAL_OR_KEYWORD
@@ -447,10 +433,6 @@ class _DoFnParam(object):
     if type(self) == type(other):
       return self.param_id == other.param_id
     return False
-
-  def __ne__(self, other):
-    # TODO(BEAM-5949): Needed for Python 2 compatibility.
-    return not self == other
 
   def __hash__(self):
     return hash(self.param_id)
@@ -718,19 +700,6 @@ class DoFn(WithTypeHints, HasDisplayData, urns.RunnerApiFn):
     return self.process
 
   urns.RunnerApiFn.register_pickle_urn(python_urns.PICKLED_DOFN)
-
-
-def _fn_takes_side_inputs(fn):
-  try:
-    signature = get_signature(fn)
-  except TypeError:
-    # We can't tell; maybe it does.
-    return True
-
-  return (
-      len(signature.parameters) > 1 or any(
-          p.kind == p.VAR_POSITIONAL or p.kind == p.VAR_KEYWORD
-          for p in signature.parameters.values()))
 
 
 class CallableWrapperDoFn(DoFn):
@@ -1586,7 +1555,8 @@ def Map(fn, *args, **kwargs):  # pylint: disable=invalid-name
     raise TypeError(
         'Map can be used only with callable objects. '
         'Received %r instead.' % (fn))
-  if _fn_takes_side_inputs(fn):
+  from apache_beam.transforms.util import fn_takes_side_inputs
+  if fn_takes_side_inputs(fn):
     wrapper = lambda x, *args, **kwargs: [fn(x, *args, **kwargs)]
   else:
     wrapper = lambda x: [fn(x)]
@@ -1622,10 +1592,6 @@ def MapTuple(fn, *args, **kwargs):  # pylint: disable=invalid-name
   flattens them into multiple input arguments.
 
       beam.MapTuple(lambda a, b, ...: ...)
-
-  is equivalent to Python 2
-
-      beam.Map(lambda (a, b, ...), ...: ...)
 
   In other words
 
@@ -2344,6 +2310,44 @@ class GroupByKey(PTransform):
           key_type, typehints.WindowedValue[value_type]]]  # type: ignore[misc]
 
   def expand(self, pcoll):
+    from apache_beam.transforms.trigger import DataLossReason
+    from apache_beam.transforms.trigger import DefaultTrigger
+    windowing = pcoll.windowing
+    trigger = windowing.triggerfn
+    if not pcoll.is_bounded and isinstance(
+        windowing.windowfn, GlobalWindows) and isinstance(trigger,
+                                                          DefaultTrigger):
+      if pcoll.pipeline.allow_unsafe_triggers:
+        # TODO(BEAM-9487) Change comment for Beam 2.33
+        _LOGGER.warning(
+            '%s: PCollection passed to GroupByKey is unbounded, has a global '
+            'window, and uses a default trigger. This is being allowed '
+            'because --allow_unsafe_triggers is set, but it may prevent '
+            'data from making it through the pipeline.',
+            self.label)
+      else:
+        raise ValueError(
+            'GroupByKey cannot be applied to an unbounded ' +
+            'PCollection with global windowing and a default trigger')
+
+    unsafe_reason = trigger.may_lose_data(windowing)
+    if unsafe_reason != DataLossReason.NO_POTENTIAL_LOSS:
+      reason_msg = str(unsafe_reason).replace('DataLossReason.', '')
+      if pcoll.pipeline.allow_unsafe_triggers:
+        _LOGGER.warning(
+            '%s: Unsafe trigger `%s` detected (reason: %s). This is '
+            'being allowed because --allow_unsafe_triggers is set. This could '
+            'lead to missing or incomplete groups.',
+            self.label,
+            trigger,
+            reason_msg)
+      else:
+        msg = '{}: Unsafe trigger: `{}` may lose data. '.format(
+            self.label, trigger)
+        msg += 'Reason: {}. '.format(reason_msg)
+        msg += 'This can be overriden with the --allow_unsafe_triggers flag.'
+        raise ValueError(msg)
+
     return pvalue.PCollection.from_(pcoll)
 
   def infer_output_type(self, input_type):
@@ -2412,14 +2416,7 @@ class GroupBy(PTransform):
       for ix, field in enumerate(fields):
         name = field if isinstance(field, str) else 'key%d' % ix
         key_fields.append((name, _expr_to_callable(field, ix)))
-      if sys.version_info < (3, 6):
-        # Before PEP 468, these are randomly ordered.
-        # At least provide deterministic behavior here.
-        # pylint: disable=dict-items-not-iterating
-        kwargs_items = sorted(kwargs.items())
-      else:
-        kwargs_items = kwargs.items()  # pylint: disable=dict-items-not-iterating
-      for name, expr in kwargs_items:
+      for name, expr in kwargs.items():
         key_fields.append((name, _expr_to_callable(expr, name)))
     self._key_fields = key_fields
     field_names = tuple(name for name, _ in key_fields)
@@ -2697,10 +2694,6 @@ class Windowing(object):
           self.environment_id == self.environment_id)
     return False
 
-  def __ne__(self, other):
-    # TODO(BEAM-5949): Needed for Python 2 compatibility.
-    return not self == other
-
   def __hash__(self):
     return hash((
         self.windowfn,
@@ -2743,7 +2736,7 @@ class Windowing(object):
         accumulation_mode=proto.accumulation_mode,
         timestamp_combiner=proto.output_time,
         allowed_lateness=Duration(micros=proto.allowed_lateness * 1000),
-        environment_id=proto.environment_id)
+        environment_id=None)
 
 
 @typehints.with_input_types(T)
@@ -2887,13 +2880,6 @@ class Flatten(PTransform):
     is_bounded = all(pcoll.is_bounded for pcoll in pcolls)
     return pvalue.PCollection(self.pipeline, is_bounded=is_bounded)
 
-  def get_windowing(self, inputs):
-    # type: (typing.Any) -> Windowing
-    if not inputs:
-      # TODO(robertwb): Return something compatible with every windowing?
-      return Windowing(GlobalWindows())
-    return super(Flatten, self).get_windowing(inputs)
-
   def infer_output_type(self, input_type):
     return input_type
 
@@ -2920,7 +2906,7 @@ class Create(PTransform):
       values: An object of values for the PCollection
     """
     super(Create, self).__init__()
-    if isinstance(values, (unicode, str, bytes)):
+    if isinstance(values, (str, bytes)):
       raise TypeError(
           'PTransform Create: Refusing to treat string as '
           'an iterable. (string=%r)' % values)
@@ -2928,6 +2914,15 @@ class Create(PTransform):
       values = values.items()
     self.values = tuple(values)
     self.reshuffle = reshuffle
+    self._coder = typecoders.registry.get_coder(self.get_output_type())
+
+  def __getstate__(self):
+    serialized_values = [self._coder.encode(v) for v in self.values]
+    return serialized_values, self.reshuffle, self._coder
+
+  def __setstate__(self, state):
+    serialized_values, self.reshuffle, self._coder = state
+    self.values = [self._coder.decode(v) for v in serialized_values]
 
   def to_runner_api_parameter(self, context):
     # type: (PipelineContext) -> typing.Tuple[str, bytes]
@@ -2949,8 +2944,7 @@ class Create(PTransform):
 
   def expand(self, pbegin):
     assert isinstance(pbegin, pvalue.PBegin)
-    coder = typecoders.registry.get_coder(self.get_output_type())
-    serialized_values = [coder.encode(v) for v in self.values]
+    serialized_values = [self._coder.encode(v) for v in self.values]
     reshuffle = self.reshuffle
 
     # Avoid the "redistributing" reshuffle for 0 and 1 element Creates.
@@ -2970,12 +2964,11 @@ class Create(PTransform):
         | Impulse()
         | FlatMap(lambda _: serialized_values).with_output_types(bytes)
         | MaybeReshuffle().with_output_types(bytes)
-        | Map(coder.decode).with_output_types(self.get_output_type()))
+        | Map(self._coder.decode).with_output_types(self.get_output_type()))
 
   def as_read(self):
     from apache_beam.io import iobase
-    coder = typecoders.registry.get_coder(self.get_output_type())
-    source = self._create_source_from_iterable(self.values, coder)
+    source = self._create_source_from_iterable(self.values, self._coder)
     return iobase.Read(source).with_output_types(self.get_output_type())
 
   def get_windowing(self, unused_inputs):

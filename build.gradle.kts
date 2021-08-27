@@ -50,6 +50,7 @@ tasks.rat {
     "**/test.avsc",
     "**/user.avsc",
     "**/test/resources/**/*.txt",
+    "**/test/resources/**/*.csv",
     "**/test/**/.placeholder",
 
     // Default eclipse excludes neglect subprojects
@@ -89,6 +90,9 @@ tasks.rat {
     // Ignore ownership files
     "ownership/**/*",
     "**/OWNERS",
+
+    // Ignore CPython LICENSE file
+    "LICENSE.python",
 
     // Json doesn't support comments.
     "**/*.json",
@@ -144,6 +148,7 @@ task("javaPreCommit") {
   dependsOn(":sdks:java:core:buildNeeded")
   dependsOn(":sdks:java:core:buildDependents")
   dependsOn(":examples:java:preCommit")
+  dependsOn(":examples:java:twitter:preCommit")
   dependsOn(":sdks:java:extensions:sql:jdbc:preCommit")
   dependsOn(":sdks:java:javadoc:allJavadoc")
   dependsOn(":runners:direct-java:needsRunnerTests")
@@ -162,15 +167,12 @@ task("javaPreCommitPortabilityApi") {
 }
 
 task("javaPostCommit") {
-  dependsOn(":runners:google-cloud-dataflow-java:postCommit")
-  dependsOn(":runners:google-cloud-dataflow-java:postCommitRunnerV2")
   dependsOn(":sdks:java:extensions:google-cloud-platform-core:postCommit")
   dependsOn(":sdks:java:extensions:zetasketch:postCommit")
   dependsOn(":sdks:java:io:debezium:integrationTest")
   dependsOn(":sdks:java:io:google-cloud-platform:postCommit")
   dependsOn(":sdks:java:io:kinesis:integrationTest")
   dependsOn(":sdks:java:extensions:ml:postCommit")
-  dependsOn(":javaHadoopVersionsTest")
   dependsOn(":sdks:java:io:kafka:kafkaVersionsCompatibilityTest")
 }
 
@@ -217,7 +219,7 @@ task("goPrecommitBuild") {
 }
 
 task("goPortablePreCommit") {
-  dependsOn(":sdks:go:test:ulrXlangValidatesRunnerJenkins")
+  dependsOn(":sdks:go:test:ulrValidatesRunner")
 }
 
 task("goPostCommit") {
@@ -228,7 +230,7 @@ task("goIntegrationTests") {
   doLast {
     exec {
       executable("sh")
-      args("-c", "./sdks/go/test/run_validatesrunner_tests.sh --runner dataflow --jenkins")
+      args("-c", "./sdks/go/test/run_validatesrunner_tests.sh --runner dataflow")
     }
   }
   dependsOn(":sdks:go:test:build")
@@ -333,9 +335,17 @@ task("pushAllDockerImages") {
   dependsOn(":runners:spark:3:job-server:container:dockerPush")
   dependsOn(":sdks:java:container:pushAll")
   dependsOn(":sdks:python:container:pushAll")
+  dependsOn(":sdks:go:container:pushAll")
   for (version in project.ext.get("allFlinkVersions") as Array<*>) {
     dependsOn(":runners:flink:${version}:job-server-container:dockerPush")
   }
+}
+
+// Use this task to validate the environment set up for Go, Python and Java
+task("checkSetup") {
+  dependsOn(":sdks:go:examples:wordCount")
+  dependsOn(":sdks:python:wordCount")
+  dependsOn(":examples:java:wordCount")
 }
 
 // Configure the release plugin to do only local work; the release manager determines what, if

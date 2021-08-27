@@ -28,10 +28,10 @@ PostcommitJobBuilder.postCommitJob('beam_PostCommit_Py_ValCont',
       description('Runs Python ValidatesContainer suite on the Dataflow runner.')
 
       // Set common parameters.
-      commonJobProperties.setTopLevelMainJobProperties(delegate, 'master', 180)
+      commonJobProperties.setTopLevelMainJobProperties(delegate)
 
       publishers {
-        archiveJunit('**/nosetests*.xml')
+        archiveJunit('**/pytest*.xml')
       }
 
       // Execute shell command to test Python SDK.

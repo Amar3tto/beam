@@ -47,9 +47,11 @@ import org.apache.beam.sdk.coders.LengthPrefixCoder;
 import org.apache.beam.sdk.coders.ListCoder;
 import org.apache.beam.sdk.coders.MapCoder;
 import org.apache.beam.sdk.coders.NullableCoder;
+import org.apache.beam.sdk.coders.RowCoder;
 import org.apache.beam.sdk.coders.SerializableCoder;
 import org.apache.beam.sdk.coders.SetCoder;
 import org.apache.beam.sdk.coders.StructuredCoder;
+import org.apache.beam.sdk.coders.TimestampPrefixingWindowCoder;
 import org.apache.beam.sdk.coders.VarLongCoder;
 import org.apache.beam.sdk.schemas.Schema;
 import org.apache.beam.sdk.schemas.Schema.FieldType;
@@ -143,6 +145,7 @@ public class CloudObjectsTest {
               .add(new ObjectCoder())
               .add(GlobalWindow.Coder.INSTANCE)
               .add(IntervalWindow.getCoder())
+              .add(TimestampPrefixingWindowCoder.of(IntervalWindow.getCoder()))
               .add(LengthPrefixCoder.of(VarLongCoder.of()))
               .add(IterableCoder.of(VarLongCoder.of()))
               .add(KvCoder.of(VarLongCoder.of(), ByteArrayCoder.of()))
@@ -178,7 +181,8 @@ public class CloudObjectsTest {
                       new RowIdentity()))
               .add(
                   SchemaCoder.of(
-                      TEST_SCHEMA, TypeDescriptors.rows(), new RowIdentity(), new RowIdentity()));
+                      TEST_SCHEMA, TypeDescriptors.rows(), new RowIdentity(), new RowIdentity()))
+              .add(RowCoder.of(TEST_SCHEMA));
       for (Class<? extends Coder> atomicCoder :
           DefaultCoderCloudObjectTranslatorRegistrar.KNOWN_ATOMIC_CODERS) {
         dataBuilder.add(InstanceBuilder.ofType(atomicCoder).fromFactoryMethod("of").build());

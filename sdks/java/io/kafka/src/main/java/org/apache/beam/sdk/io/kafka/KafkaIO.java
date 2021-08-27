@@ -22,19 +22,26 @@ import static org.apache.beam.vendor.guava.v26_0_jre.com.google.common.base.Prec
 
 import com.google.auto.service.AutoService;
 import com.google.auto.value.AutoValue;
+import edu.umd.cs.findbugs.annotations.SuppressFBWarnings;
 import io.confluent.kafka.serializers.KafkaAvroDeserializer;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.stream.Collectors;
+import org.apache.beam.runners.core.construction.PTransformMatchers;
+import org.apache.beam.runners.core.construction.ReplacementOutputs;
 import org.apache.beam.sdk.annotations.Experimental;
 import org.apache.beam.sdk.annotations.Experimental.Kind;
+import org.apache.beam.sdk.annotations.Internal;
 import org.apache.beam.sdk.coders.AtomicCoder;
 import org.apache.beam.sdk.coders.AvroCoder;
 import org.apache.beam.sdk.coders.ByteArrayCoder;
@@ -48,10 +55,17 @@ import org.apache.beam.sdk.expansion.ExternalTransformRegistrar;
 import org.apache.beam.sdk.io.Read.Unbounded;
 import org.apache.beam.sdk.io.UnboundedSource;
 import org.apache.beam.sdk.io.UnboundedSource.CheckpointMark;
+import org.apache.beam.sdk.io.kafka.KafkaIO.Read.External;
 import org.apache.beam.sdk.options.ExperimentalOptions;
 import org.apache.beam.sdk.options.PipelineOptions;
 import org.apache.beam.sdk.options.ValueProvider;
+import org.apache.beam.sdk.runners.AppliedPTransform;
+import org.apache.beam.sdk.runners.PTransformOverride;
+import org.apache.beam.sdk.runners.PTransformOverrideFactory;
+import org.apache.beam.sdk.schemas.JavaFieldSchema;
 import org.apache.beam.sdk.schemas.NoSuchSchemaException;
+import org.apache.beam.sdk.schemas.annotations.DefaultSchema;
+import org.apache.beam.sdk.schemas.annotations.SchemaCreate;
 import org.apache.beam.sdk.schemas.transforms.Convert;
 import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.transforms.ExternalTransformBuilder;
@@ -72,6 +86,7 @@ import org.apache.beam.sdk.values.PBegin;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.PDone;
 import org.apache.beam.sdk.values.Row;
+import org.apache.beam.sdk.values.TupleTag;
 import org.apache.beam.sdk.values.TypeDescriptor;
 import org.apache.beam.sdk.values.TypeDescriptors;
 import org.apache.beam.vendor.guava.v26_0_jre.com.google.common.annotations.VisibleForTesting;
@@ -298,6 +313,27 @@ import org.slf4j.LoggerFactory;
  *      // Use Confluent Schema Registry, specify schema registry URL and value subject
  *      .withValueDeserializer(
  *          ConfluentSchemaRegistryDeserializerProvider.of("http://localhost:8081", "my_topic-value"))
+ *    ...
+ * }</pre>
+ *
+ * <p>You can also pass properties to the schema registry client allowing you to configure
+ * authentication
+ *
+ * <pre>{@code
+ * ImmutableMap<String, Object> csrConfig =
+ *     ImmutableMap.<String, Object>builder()
+ *         .put(AbstractKafkaAvroSerDeConfig.BASIC_AUTH_CREDENTIALS_SOURCE,"USER_INFO")
+ *         .put(AbstractKafkaAvroSerDeConfig.USER_INFO_CONFIG,"<username>:<password>")
+ *         .build();
+ *
+ * PCollection<KafkaRecord<Long, GenericRecord>> input = pipeline
+ *   .apply(KafkaIO.<Long, GenericRecord>read()
+ *      .withBootstrapServers("broker_1:9092,broker_2:9092")
+ *      .withTopic("my_topic")
+ *      .withKeyDeserializer(LongDeserializer.class)
+ *      // Use Confluent Schema Registry, specify schema registry URL, value subject and schema registry client configuration
+ *      .withValueDeserializer(
+ *          ConfluentSchemaRegistryDeserializerProvider.of("https://localhost:8081", "my_topic-value", null, csrConfig))
  *    ...
  * }</pre>
  *
@@ -574,9 +610,9 @@ public class KafkaIO {
       extends PTransform<PBegin, PCollection<KafkaRecord<K, V>>> {
     abstract Map<String, Object> getConsumerConfig();
 
-    abstract List<String> getTopics();
+    abstract @Nullable List<String> getTopics();
 
-    abstract List<TopicPartition> getTopicPartitions();
+    abstract @Nullable List<TopicPartition> getTopicPartitions();
 
     abstract @Nullable Coder<K> getKeyCoder();
 
@@ -613,8 +649,7 @@ public class KafkaIO {
 
     @Experimental(Kind.PORTABILITY)
     @AutoValue.Builder
-    abstract static class Builder<K, V>
-        implements ExternalTransformBuilder<External.Configuration, PBegin, PCollection<KV<K, V>>> {
+    abstract static class Builder<K, V> {
       abstract Builder<K, V> setConsumerConfig(Map<String, Object> config);
 
       abstract Builder<K, V> setTopics(List<String> topics);
@@ -657,64 +692,60 @@ public class KafkaIO {
 
       abstract Read<K, V> build();
 
-      @Override
-      public PTransform<PBegin, PCollection<KV<K, V>>> buildExternal(
-          External.Configuration config) {
+      static void setupExternalBuilder(Builder builder, External.Configuration config) {
         ImmutableList.Builder<String> listBuilder = ImmutableList.builder();
         for (String topic : config.topics) {
           listBuilder.add(topic);
         }
-        setTopics(listBuilder.build());
+        builder.setTopics(listBuilder.build());
 
         Class keyDeserializer = resolveClass(config.keyDeserializer);
-        setKeyDeserializerProvider(LocalDeserializerProvider.of(keyDeserializer));
-        setKeyCoder(resolveCoder(keyDeserializer));
+        builder.setKeyDeserializerProvider(LocalDeserializerProvider.of(keyDeserializer));
+        builder.setKeyCoder(resolveCoder(keyDeserializer));
 
         Class valueDeserializer = resolveClass(config.valueDeserializer);
-        setValueDeserializerProvider(LocalDeserializerProvider.of(valueDeserializer));
-        setValueCoder(resolveCoder(valueDeserializer));
+        builder.setValueDeserializerProvider(LocalDeserializerProvider.of(valueDeserializer));
+        builder.setValueCoder(resolveCoder(valueDeserializer));
 
         Map<String, Object> consumerConfig = new HashMap<>(config.consumerConfig);
         // Key and Value Deserializers always have to be in the config.
         consumerConfig.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, keyDeserializer.getName());
         consumerConfig.put(
             ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, valueDeserializer.getName());
-        setConsumerConfig(consumerConfig);
+        builder.setConsumerConfig(consumerConfig);
 
         // Set required defaults
-        setTopicPartitions(Collections.emptyList());
-        setConsumerFactoryFn(KafkaIOUtils.KAFKA_CONSUMER_FACTORY_FN);
+        builder.setTopicPartitions(Collections.emptyList());
+        builder.setConsumerFactoryFn(KafkaIOUtils.KAFKA_CONSUMER_FACTORY_FN);
         if (config.maxReadTime != null) {
-          setMaxReadTime(Duration.standardSeconds(config.maxReadTime));
+          builder.setMaxReadTime(Duration.standardSeconds(config.maxReadTime));
         }
-        setMaxNumRecords(config.maxNumRecords == null ? Long.MAX_VALUE : config.maxNumRecords);
+        builder.setMaxNumRecords(
+            config.maxNumRecords == null ? Long.MAX_VALUE : config.maxNumRecords);
 
         // Set committing offset configuration.
-        setCommitOffsetsInFinalizeEnabled(config.commitOffsetInFinalize);
+        builder.setCommitOffsetsInFinalizeEnabled(config.commitOffsetInFinalize);
 
         // Set timestamp policy with built-in types.
         String timestampPolicy = config.timestampPolicy;
         if (timestampPolicy.equals("ProcessingTime")) {
-          setTimestampPolicyFactory(TimestampPolicyFactory.withProcessingTime());
+          builder.setTimestampPolicyFactory(TimestampPolicyFactory.withProcessingTime());
         } else if (timestampPolicy.equals("CreateTime")) {
-          setTimestampPolicyFactory(TimestampPolicyFactory.withCreateTime(Duration.ZERO));
+          builder.setTimestampPolicyFactory(TimestampPolicyFactory.withCreateTime(Duration.ZERO));
         } else if (timestampPolicy.equals("LogAppendTime")) {
-          setTimestampPolicyFactory(TimestampPolicyFactory.withLogAppendTime());
+          builder.setTimestampPolicyFactory(TimestampPolicyFactory.withLogAppendTime());
         } else {
           throw new IllegalArgumentException(
               "timestampPolicy should be one of (ProcessingTime, CreateTime, LogAppendTime)");
         }
 
         if (config.startReadTime != null) {
-          setStartReadTime(Instant.ofEpochMilli(config.startReadTime));
+          builder.setStartReadTime(Instant.ofEpochMilli(config.startReadTime));
         }
 
         // We can expose dynamic read to external build when ReadFromKafkaDoFn is the default
         // implementation.
-        setDynamicRead(false);
-
-        // We do not include Metadata until we can encode KafkaRecords cross-language
-        return build().withoutMetadata();
+        builder.setDynamicRead(false);
       }
 
       private static Coder resolveCoder(Class deserializer) {
@@ -747,14 +778,22 @@ public class KafkaIO {
     @AutoService(ExternalTransformRegistrar.class)
     public static class External implements ExternalTransformRegistrar {
 
-      public static final String URN = "beam:external:java:kafka:read:v1";
+      // Using the transform name in the URN so that the corresponding transform can be easily
+      // identified.
+      public static final String URN_WITH_METADATA =
+          "beam:external:java:kafkaio:externalwithmetadata:v1";
+      public static final String URN_WITHOUT_METADATA =
+          "beam:external:java:kafkaio:typedwithoutmetadata:v1";
 
       @Override
       public Map<String, Class<? extends ExternalTransformBuilder<?, ?, ?>>> knownBuilders() {
         return ImmutableMap.of(
-            URN,
+            URN_WITH_METADATA,
             (Class<? extends ExternalTransformBuilder<?, ?, ?>>)
-                (Class<?>) AutoValue_KafkaIO_Read.Builder.class);
+                (Class<?>) RowsWithMetadata.Builder.class,
+            URN_WITHOUT_METADATA,
+            (Class<? extends ExternalTransformBuilder<?, ?, ?>>)
+                (Class<?>) TypedWithoutMetadata.Builder.class);
       }
 
       /** Parameters class to expose the Read transform to an external SDK. */
@@ -832,7 +871,8 @@ public class KafkaIO {
      */
     public Read<K, V> withTopics(List<String> topics) {
       checkState(
-          getTopicPartitions().isEmpty(), "Only topics or topicPartitions can be set, not both");
+          getTopicPartitions() == null || getTopicPartitions().isEmpty(),
+          "Only topics or topicPartitions can be set, not both");
       return toBuilder().setTopics(ImmutableList.copyOf(topics)).build();
     }
 
@@ -844,7 +884,9 @@ public class KafkaIO {
      * partitions are distributed among the splits.
      */
     public Read<K, V> withTopicPartitions(List<TopicPartition> topicPartitions) {
-      checkState(getTopics().isEmpty(), "Only topics or topicPartitions can be set, not both");
+      checkState(
+          getTopics() == null || getTopics().isEmpty(),
+          "Only topics or topicPartitions can be set, not both");
       return toBuilder().setTopicPartitions(ImmutableList.copyOf(topicPartitions)).build();
     }
 
@@ -1154,6 +1196,10 @@ public class KafkaIO {
       return new TypedWithoutMetadata<>(this);
     }
 
+    PTransform<PBegin, PCollection<Row>> externalWithMetadata() {
+      return new RowsWithMetadata<>(this);
+    }
+
     @Override
     public PCollection<KafkaRecord<K, V>> expand(PBegin input) {
       checkArgument(
@@ -1163,7 +1209,8 @@ public class KafkaIO {
       // construction time. But it requires enabling beam_fn_api.
       if (!isDynamicRead()) {
         checkArgument(
-            getTopics().size() > 0 || getTopicPartitions().size() > 0,
+            (getTopics() != null && getTopics().size() > 0)
+                || (getTopicPartitions() != null && getTopicPartitions().size() > 0),
             "Either withTopic(), withTopics() or withTopicPartitions() is required");
       } else {
         checkArgument(
@@ -1209,65 +1256,170 @@ public class KafkaIO {
       Coder<K> keyCoder = getKeyCoder(coderRegistry);
       Coder<V> valueCoder = getValueCoder(coderRegistry);
 
-      // The Read will be expanded into SDF transform when "beam_fn_api" is enabled.
-      if (!ExperimentalOptions.hasExperiment(input.getPipeline().getOptions(), "beam_fn_api")
+      // For read from unbounded in a bounded manner, we actually are not going through Read or SDF.
+      if (ExperimentalOptions.hasExperiment(
+              input.getPipeline().getOptions(), "beam_fn_api_use_deprecated_read")
           || ExperimentalOptions.hasExperiment(
-              input.getPipeline().getOptions(), "beam_fn_api_use_deprecated_read")) {
+              input.getPipeline().getOptions(), "use_deprecated_read")
+          || getMaxNumRecords() < Long.MAX_VALUE
+          || getMaxReadTime() != null
+          || runnerRequiresLegacyRead(input.getPipeline().getOptions())) {
+        return input.apply(new ReadFromKafkaViaUnbounded<>(this, keyCoder, valueCoder));
+      }
+      return input.apply(new ReadFromKafkaViaSDF<>(this, keyCoder, valueCoder));
+    }
+
+    private boolean runnerRequiresLegacyRead(PipelineOptions options) {
+      // Only Dataflow runner requires sdf read at this moment. For other non-portable runners, if
+      // it doesn't specify use_sdf_read, it will use legacy read regarding to performance concern.
+      // TODO(BEAM-10670): Remove this special check when we address performance issue.
+      if (ExperimentalOptions.hasExperiment(options, "use_sdf_read")) {
+        return false;
+      }
+      if (options.getRunner().getName().startsWith("org.apache.beam.runners.dataflow.")) {
+        return false;
+      } else if (ExperimentalOptions.hasExperiment(options, "beam_fn_api")) {
+        return false;
+      }
+      return true;
+    }
+
+    /**
+     * A {@link PTransformOverride} for runners to swap {@link ReadFromKafkaViaSDF} to legacy Kafka
+     * read if runners doesn't have a good support on executing unbounded Splittable DoFn.
+     */
+    @Internal
+    public static final PTransformOverride KAFKA_READ_OVERRIDE =
+        PTransformOverride.of(
+            PTransformMatchers.classEqualTo(ReadFromKafkaViaSDF.class),
+            new KafkaReadOverrideFactory<>());
+
+    private static class KafkaReadOverrideFactory<K, V>
+        implements PTransformOverrideFactory<
+            PBegin, PCollection<KafkaRecord<K, V>>, ReadFromKafkaViaSDF<K, V>> {
+
+      @Override
+      public PTransformReplacement<PBegin, PCollection<KafkaRecord<K, V>>> getReplacementTransform(
+          AppliedPTransform<PBegin, PCollection<KafkaRecord<K, V>>, ReadFromKafkaViaSDF<K, V>>
+              transform) {
+        return PTransformReplacement.of(
+            transform.getPipeline().begin(),
+            new ReadFromKafkaViaUnbounded<>(
+                transform.getTransform().kafkaRead,
+                transform.getTransform().keyCoder,
+                transform.getTransform().valueCoder));
+      }
+
+      @Override
+      public Map<PCollection<?>, ReplacementOutput> mapOutputs(
+          Map<TupleTag<?>, PCollection<?>> outputs, PCollection<KafkaRecord<K, V>> newOutput) {
+        return ReplacementOutputs.singleton(outputs, newOutput);
+      }
+    }
+
+    private static class ReadFromKafkaViaUnbounded<K, V>
+        extends PTransform<PBegin, PCollection<KafkaRecord<K, V>>> {
+      Read<K, V> kafkaRead;
+      Coder<K> keyCoder;
+      Coder<V> valueCoder;
+
+      ReadFromKafkaViaUnbounded(Read<K, V> kafkaRead, Coder<K> keyCoder, Coder<V> valueCoder) {
+        this.kafkaRead = kafkaRead;
+        this.keyCoder = keyCoder;
+        this.valueCoder = valueCoder;
+      }
+
+      @Override
+      public PCollection<KafkaRecord<K, V>> expand(PBegin input) {
         // Handles unbounded source to bounded conversion if maxNumRecords or maxReadTime is set.
         Unbounded<KafkaRecord<K, V>> unbounded =
             org.apache.beam.sdk.io.Read.from(
-                toBuilder().setKeyCoder(keyCoder).setValueCoder(valueCoder).build().makeSource());
+                kafkaRead
+                    .toBuilder()
+                    .setKeyCoder(keyCoder)
+                    .setValueCoder(valueCoder)
+                    .build()
+                    .makeSource());
 
         PTransform<PBegin, PCollection<KafkaRecord<K, V>>> transform = unbounded;
 
-        if (getMaxNumRecords() < Long.MAX_VALUE || getMaxReadTime() != null) {
+        if (kafkaRead.getMaxNumRecords() < Long.MAX_VALUE || kafkaRead.getMaxReadTime() != null) {
           transform =
-              unbounded.withMaxReadTime(getMaxReadTime()).withMaxNumRecords(getMaxNumRecords());
+              unbounded
+                  .withMaxReadTime(kafkaRead.getMaxReadTime())
+                  .withMaxNumRecords(kafkaRead.getMaxNumRecords());
         }
 
         return input.getPipeline().apply(transform);
       }
-      ReadSourceDescriptors<K, V> readTransform =
-          ReadSourceDescriptors.<K, V>read()
-              .withConsumerConfigOverrides(getConsumerConfig())
-              .withOffsetConsumerConfigOverrides(getOffsetConsumerConfig())
-              .withConsumerFactoryFn(getConsumerFactoryFn())
-              .withKeyDeserializerProvider(getKeyDeserializerProvider())
-              .withValueDeserializerProvider(getValueDeserializerProvider())
-              .withManualWatermarkEstimator()
-              .withTimestampPolicyFactory(getTimestampPolicyFactory())
-              .withCheckStopReadingFn(getCheckStopReadingFn());
-      if (isCommitOffsetsInFinalizeEnabled()) {
-        readTransform = readTransform.commitOffsets();
-      }
-      PCollection<KafkaSourceDescriptor> output;
-      if (isDynamicRead()) {
-        output =
-            input
-                .getPipeline()
-                .apply(Impulse.create())
-                .apply(
-                    MapElements.into(
-                            TypeDescriptors.kvs(
-                                new TypeDescriptor<byte[]>() {}, new TypeDescriptor<byte[]>() {}))
-                        .via(element -> KV.of(element, element)))
-                .apply(
-                    ParDo.of(
-                        new WatchKafkaTopicPartitionDoFn(
-                            getWatchTopicPartitionDuration(),
-                            getConsumerFactoryFn(),
-                            getCheckStopReadingFn(),
-                            getConsumerConfig(),
-                            getStartReadTime())));
+    }
 
-      } else {
-        output =
-            input
-                .getPipeline()
-                .apply(Impulse.create())
-                .apply(ParDo.of(new GenerateKafkaSourceDescriptor(this)));
+    static class ReadFromKafkaViaSDF<K, V>
+        extends PTransform<PBegin, PCollection<KafkaRecord<K, V>>> {
+      Read<K, V> kafkaRead;
+      Coder<K> keyCoder;
+      Coder<V> valueCoder;
+
+      ReadFromKafkaViaSDF(Read<K, V> kafkaRead, Coder<K> keyCoder, Coder<V> valueCoder) {
+        this.kafkaRead = kafkaRead;
+        this.keyCoder = keyCoder;
+        this.valueCoder = valueCoder;
       }
-      return output.apply(readTransform).setCoder(KafkaRecordCoder.of(keyCoder, valueCoder));
+
+      @Override
+      public PCollection<KafkaRecord<K, V>> expand(PBegin input) {
+        ReadSourceDescriptors<K, V> readTransform =
+            ReadSourceDescriptors.<K, V>read()
+                .withConsumerConfigOverrides(kafkaRead.getConsumerConfig())
+                .withOffsetConsumerConfigOverrides(kafkaRead.getOffsetConsumerConfig())
+                .withConsumerFactoryFn(kafkaRead.getConsumerFactoryFn())
+                .withKeyDeserializerProvider(kafkaRead.getKeyDeserializerProvider())
+                .withValueDeserializerProvider(kafkaRead.getValueDeserializerProvider())
+                .withManualWatermarkEstimator()
+                .withTimestampPolicyFactory(kafkaRead.getTimestampPolicyFactory())
+                .withCheckStopReadingFn(kafkaRead.getCheckStopReadingFn());
+        if (kafkaRead.isCommitOffsetsInFinalizeEnabled()) {
+          readTransform = readTransform.commitOffsets();
+        }
+        PCollection<KafkaSourceDescriptor> output;
+        if (kafkaRead.isDynamicRead()) {
+          Set<String> topics = new HashSet<>();
+          if (kafkaRead.getTopics() != null && kafkaRead.getTopics().size() > 0) {
+            topics.addAll(kafkaRead.getTopics());
+          }
+          if (kafkaRead.getTopicPartitions() != null && kafkaRead.getTopicPartitions().size() > 0) {
+            for (TopicPartition topicPartition : kafkaRead.getTopicPartitions()) {
+              topics.add(topicPartition.topic());
+            }
+          }
+          output =
+              input
+                  .getPipeline()
+                  .apply(Impulse.create())
+                  .apply(
+                      MapElements.into(
+                              TypeDescriptors.kvs(
+                                  new TypeDescriptor<byte[]>() {}, new TypeDescriptor<byte[]>() {}))
+                          .via(element -> KV.of(element, element)))
+                  .apply(
+                      ParDo.of(
+                          new WatchKafkaTopicPartitionDoFn(
+                              kafkaRead.getWatchTopicPartitionDuration(),
+                              kafkaRead.getConsumerFactoryFn(),
+                              kafkaRead.getCheckStopReadingFn(),
+                              kafkaRead.getConsumerConfig(),
+                              kafkaRead.getStartReadTime(),
+                              topics.stream().collect(Collectors.toList()))));
+
+        } else {
+          output =
+              input
+                  .getPipeline()
+                  .apply(Impulse.create())
+                  .apply(ParDo.of(new GenerateKafkaSourceDescriptor(kafkaRead)));
+        }
+        return output.apply(readTransform).setCoder(KafkaRecordCoder.of(keyCoder, valueCoder));
+      }
     }
 
     /**
@@ -1383,6 +1535,20 @@ public class KafkaIO {
       this.read = read;
     }
 
+    @Experimental(Kind.PORTABILITY)
+    static class Builder<K, V>
+        implements ExternalTransformBuilder<External.Configuration, PBegin, PCollection<KV<K, V>>> {
+
+      @Override
+      public PTransform<PBegin, PCollection<KV<K, V>>> buildExternal(
+          External.Configuration config) {
+        Read.Builder<K, V> readBuilder = new AutoValue_KafkaIO_Read.Builder();
+        Read.Builder.setupExternalBuilder(readBuilder, config);
+
+        return readBuilder.build().withoutMetadata();
+      }
+    }
+
     @Override
     public PCollection<KV<K, V>> expand(PBegin begin) {
       return begin
@@ -1396,6 +1562,152 @@ public class KafkaIO {
                       ctx.output(ctx.element().getKV());
                     }
                   }));
+    }
+
+    @Override
+    public void populateDisplayData(DisplayData.Builder builder) {
+      super.populateDisplayData(builder);
+      read.populateDisplayData(builder);
+    }
+  }
+
+  @DefaultSchema(JavaFieldSchema.class)
+  @SuppressFBWarnings("URF_UNREAD_FIELD")
+  /**
+   * Represents a Kafka header. We define a new class so that we can add schema annotations for
+   * generating Rows.
+   */
+  static class KafkaHeader {
+
+    String key;
+    byte[] value;
+
+    @SchemaCreate
+    public KafkaHeader(String key, byte[] value) {
+      this.key = key;
+      this.value = value;
+    }
+  }
+
+  @DefaultSchema(JavaFieldSchema.class)
+  @SuppressFBWarnings("URF_UNREAD_FIELD")
+  /**
+   * Represents a Kafka record with metadata whey key and values are byte arrays. This class should
+   * only be used to represent a Kafka record for external transforms. TODO(BEAM-7345): use regular
+   * KafkaRecord class when Beam Schema inference supports generics.
+   */
+  static class ByteArrayKafkaRecord {
+
+    String topic;
+    int partition;
+    long offset;
+    long timestamp;
+    byte[] key;
+    byte[] value;
+    List<KafkaHeader> headers;
+    int timestampTypeId;
+    String timestampTypeName;
+
+    @SchemaCreate
+    public ByteArrayKafkaRecord(
+        String topic,
+        int partition,
+        long offset,
+        long timestamp,
+        byte[] key,
+        byte[] value,
+        @Nullable List<KafkaHeader> headers,
+        int timestampTypeId,
+        String timestampTypeName) {
+      this.topic = topic;
+      this.partition = partition;
+      this.offset = offset;
+      this.timestamp = timestamp;
+      this.key = key;
+      this.value = value;
+      this.headers = headers;
+      this.timestampTypeId = timestampTypeId;
+      this.timestampTypeName = timestampTypeName;
+    }
+  }
+
+  /**
+   * A {@link PTransform} to read from Kafka topics. Similar to {@link KafkaIO.Read}, but generates
+   * a {@link PCollection} of {@link Row}. This class is primarily used as a cross-language
+   * transform since {@link KafkaRecord} is not a type that can be easily encoded using Beam's
+   * standard coders. See {@link KafkaIO} for more information on usage and configuration of reader.
+   */
+  static class RowsWithMetadata<K, V> extends PTransform<PBegin, PCollection<Row>> {
+    private final Read<K, V> read;
+
+    RowsWithMetadata(Read<K, V> read) {
+      super("KafkaIO.RowsWithMetadata");
+      this.read = read;
+    }
+
+    @Experimental(Kind.PORTABILITY)
+    static class Builder<K, V>
+        implements ExternalTransformBuilder<External.Configuration, PBegin, PCollection<Row>> {
+
+      @Override
+      public PTransform<PBegin, PCollection<Row>> buildExternal(External.Configuration config) {
+        Read.Builder<K, V> readBuilder = new AutoValue_KafkaIO_Read.Builder();
+        Read.Builder.setupExternalBuilder(readBuilder, config);
+
+        Class keyDeserializer = resolveClass(config.keyDeserializer);
+        Coder keyCoder = Read.Builder.resolveCoder(keyDeserializer);
+        if (!(keyCoder instanceof ByteArrayCoder)) {
+          throw new RuntimeException(
+              "ExternalWithMetadata transform only supports keys of type byte[]");
+        }
+        Class valueDeserializer = resolveClass(config.valueDeserializer);
+        Coder valueCoder = Read.Builder.resolveCoder(valueDeserializer);
+        if (!(valueCoder instanceof ByteArrayCoder)) {
+          throw new RuntimeException(
+              "ExternalWithMetadata transform only supports values of type byte[]");
+        }
+
+        return readBuilder.build().externalWithMetadata();
+      }
+    }
+
+    public static <K, V> ByteArrayKafkaRecord toExternalKafkaRecord(KafkaRecord<K, V> kafkaRecord) {
+      List<KafkaHeader> headers =
+          (kafkaRecord.getHeaders() == null)
+              ? null
+              : Arrays.stream(kafkaRecord.getHeaders().toArray())
+                  .map(h -> new KafkaHeader(h.key(), h.value()))
+                  .collect(Collectors.toList());
+      ByteArrayKafkaRecord byteArrayKafkaRecord =
+          new ByteArrayKafkaRecord(
+              kafkaRecord.getTopic(),
+              kafkaRecord.getPartition(),
+              kafkaRecord.getOffset(),
+              kafkaRecord.getTimestamp(),
+              (byte[]) kafkaRecord.getKV().getKey(),
+              (byte[]) kafkaRecord.getKV().getValue(),
+              headers,
+              kafkaRecord.getTimestampType().id,
+              kafkaRecord.getTimestampType().name);
+
+      return byteArrayKafkaRecord;
+    }
+
+    @Override
+    public PCollection<Row> expand(PBegin begin) {
+      return begin
+          .apply(read)
+          .apply(
+              "Convert to ExternalKafkaRecord",
+              ParDo.of(
+                  new DoFn<KafkaRecord<K, V>, ByteArrayKafkaRecord>() {
+                    @ProcessElement
+                    public void processElement(ProcessContext ctx) {
+                      KafkaRecord<K, V> kafkRecord = ctx.element();
+                      ctx.output(toExternalKafkaRecord(kafkRecord));
+                    }
+                  }))
+          .apply(Convert.toRows());
     }
 
     @Override
@@ -1796,10 +2108,6 @@ public class KafkaIO {
 
     @Override
     public PCollection<KafkaRecord<K, V>> expand(PCollection<KafkaSourceDescriptor> input) {
-      checkArgument(
-          ExperimentalOptions.hasExperiment(input.getPipeline().getOptions(), "beam_fn_api"),
-          "The ReadSourceDescriptors can only used when beam_fn_api is enabled.");
-
       checkArgument(getKeyDeserializerProvider() != null, "withKeyDeserializer() is required");
       checkArgument(getValueDeserializerProvider() != null, "withValueDeserializer() is required");
 
@@ -2099,10 +2407,8 @@ public class KafkaIO {
      * transform ties checkpointing semantics in compatible Beam runners and transactions in Kafka
      * (version 0.11+) to ensure a record is written only once. As the implementation relies on
      * runners checkpoint semantics, not all the runners are compatible. The sink throws an
-     * exception during initialization if the runner is not explicitly allowed. Flink runner is one
-     * of the runners whose checkpoint semantics are not compatible with current implementation
-     * (hope to provide a solution in near future). Dataflow runner and Spark runners are
-     * compatible.
+     * exception during initialization if the runner is not explicitly allowed. The Dataflow, Flink,
+     * and Spark runners are compatible.
      *
      * <p>Note on performance: Exactly-once sink involves two shuffles of the records. In addition
      * to cost of shuffling the records among workers, the records go through 2

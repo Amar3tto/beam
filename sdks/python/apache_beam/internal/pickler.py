@@ -30,8 +30,6 @@ the coders.*PickleCoder classes should be used instead.
 
 # pytype: skip-file
 
-from __future__ import absolute_import
-
 import base64
 import bz2
 import logging
@@ -45,6 +43,8 @@ from typing import Dict
 from typing import Tuple
 
 import dill
+
+settings = {'dill_byref': None}
 
 
 class _NoOpContextManager(object):
@@ -75,9 +75,8 @@ def _is_nested_class(cls):
   """Returns true if argument is a class object that appears to be nested."""
   return (
       isinstance(cls, type) and cls.__module__ is not None and
-      cls.__module__ != 'builtins'  # Python 3
-      and cls.__module__ != '__builtin__'  # Python 2
-      and cls.__name__ not in sys.modules[cls.__module__].__dict__)
+      cls.__module__ != 'builtins' and
+      cls.__name__ not in sys.modules[cls.__module__].__dict__)
 
 
 def _find_containing_class(nested_class):
@@ -244,11 +243,11 @@ def dumps(o, enable_trace=True, use_zlib=False):
   """For internal use only; no backwards-compatibility guarantees."""
   with _pickle_lock:
     try:
-      s = dill.dumps(o)
+      s = dill.dumps(o, byref=settings['dill_byref'])
     except Exception:  # pylint: disable=broad-except
       if enable_trace:
         dill.dill._trace(True)  # pylint: disable=protected-access
-        s = dill.dumps(o)
+        s = dill.dumps(o, byref=settings['dill_byref'])
       else:
         raise
     finally:

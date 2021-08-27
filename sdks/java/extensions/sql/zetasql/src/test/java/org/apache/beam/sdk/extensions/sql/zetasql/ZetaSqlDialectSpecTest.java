@@ -1292,6 +1292,20 @@ public class ZetaSqlDialectSpecTest extends ZetaSqlTestBase {
   }
 
   @Test
+  public void testZetaSQLSelectFromTableOrderByNoSelectLimit() {
+    String sql = "SELECT Value FROM KeyValue ORDER BY Key DESC LIMIT 2;";
+    PCollection<Row> stream = execute(sql);
+
+    final Schema schema = Schema.builder().addStringField("field2").build();
+    PAssert.that(stream)
+        .containsInAnyOrder(
+            Row.withSchema(schema).addValues("KeyValue234").build(),
+            Row.withSchema(schema).addValues("KeyValue235").build());
+
+    pipeline.run().waitUntilFinish(Duration.standardMinutes(PIPELINE_EXECUTION_WAITTIME_MINUTES));
+  }
+
+  @Test
   public void testZetaSQLSelectFromTableOrderBy() {
     String sql = "SELECT Key, Value FROM KeyValue ORDER BY Key DESC;";
     ZetaSQLQueryPlanner zetaSQLQueryPlanner = new ZetaSQLQueryPlanner(config);
@@ -2498,6 +2512,44 @@ public class ZetaSqlDialectSpecTest extends ZetaSqlTestBase {
   }
 
   @Test
+  public void testUnnestArrayOfStructOfArrayColumn() {
+    String sql =
+        "SELECT s FROM table_with_array_of_struct_of_array, UNNEST(array_col), UNNEST(arr) AS s";
+
+    ZetaSQLQueryPlanner zetaSQLQueryPlanner = new ZetaSQLQueryPlanner(config);
+    BeamRelNode beamRelNode = zetaSQLQueryPlanner.convertToBeamRel(sql);
+    PCollection<Row> stream = BeamSqlRelUtils.toPCollection(pipeline, beamRelNode);
+
+    Schema schema = Schema.builder().addStringField("s").build();
+    PAssert.that(stream)
+        .containsInAnyOrder(
+            Row.withSchema(schema).addValues("a").build(),
+            Row.withSchema(schema).addValues("b").build(),
+            Row.withSchema(schema).addValues("c").build(),
+            Row.withSchema(schema).addValues("d").build());
+
+    pipeline.run().waitUntilFinish(Duration.standardMinutes(PIPELINE_EXECUTION_WAITTIME_MINUTES));
+  }
+
+  @Test
+  public void testUnnestArrayOfStructOfArrayLiteral() {
+    String sql = "SELECT b FROM UNNEST([STRUCT([1, 2, 3] AS a)]), UNNEST(a) AS b";
+
+    ZetaSQLQueryPlanner zetaSQLQueryPlanner = new ZetaSQLQueryPlanner(config);
+    BeamRelNode beamRelNode = zetaSQLQueryPlanner.convertToBeamRel(sql);
+    PCollection<Row> stream = BeamSqlRelUtils.toPCollection(pipeline, beamRelNode);
+
+    Schema schema = Schema.builder().addInt64Field("int").build();
+    PAssert.that(stream)
+        .containsInAnyOrder(
+            Row.withSchema(schema).addValues(1L).build(),
+            Row.withSchema(schema).addValues(2L).build(),
+            Row.withSchema(schema).addValues(3L).build());
+
+    pipeline.run().waitUntilFinish(Duration.standardMinutes(PIPELINE_EXECUTION_WAITTIME_MINUTES));
+  }
+
+  @Test
   public void testStringAggregation() {
     String sql =
         "SELECT STRING_AGG(fruit) AS string_agg"
@@ -3464,6 +3516,22 @@ public class ZetaSqlDialectSpecTest extends ZetaSqlTestBase {
   @Test
   public void testSubstr() {
     String sql = "SELECT substr(@p0, @p1, @p2)";
+    ImmutableMap<String, Value> params =
+        ImmutableMap.of(
+            "p0", Value.createStringValue("abc"),
+            "p1", Value.createInt64Value(-2L),
+            "p2", Value.createInt64Value(1L));
+
+    PCollection<Row> stream = execute(sql, params);
+
+    final Schema schema = Schema.builder().addStringField("field1").build();
+    PAssert.that(stream).containsInAnyOrder(Row.withSchema(schema).addValues("b").build());
+    pipeline.run().waitUntilFinish(Duration.standardMinutes(PIPELINE_EXECUTION_WAITTIME_MINUTES));
+  }
+
+  @Test
+  public void testSubstring() {
+    String sql = "SELECT substring(@p0, @p1, @p2)";
     ImmutableMap<String, Value> params =
         ImmutableMap.of(
             "p0", Value.createStringValue("abc"),

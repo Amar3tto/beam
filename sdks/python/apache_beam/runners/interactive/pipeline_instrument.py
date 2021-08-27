@@ -23,8 +23,6 @@ to transform original pipeline into a one-shot pipeline with interactivity.
 """
 # pytype: skip-file
 
-from __future__ import absolute_import
-
 import apache_beam as beam
 from apache_beam.pipeline import PipelineVisitor
 from apache_beam.portability.api import beam_runner_api_pb2
@@ -67,13 +65,13 @@ class PipelineInstrument(object):
           self._user_pipeline)
 
     self._background_caching_pipeline = beam.pipeline.Pipeline.from_runner_api(
-        pipeline.to_runner_api(use_fake_coders=True), pipeline.runner, options)
+        pipeline.to_runner_api(), pipeline.runner, options)
     ie.current_env().add_derived_pipeline(
         self._pipeline, self._background_caching_pipeline)
 
     # Snapshot of original pipeline information.
-    (self._original_pipeline_proto, context) = self._pipeline.to_runner_api(
-        return_context=True, use_fake_coders=True)
+    (self._original_pipeline_proto,
+     context) = self._pipeline.to_runner_api(return_context=True)
 
     # All compute-once-against-original-pipeline fields.
     self._unbounded_sources = unbounded_sources(
@@ -125,8 +123,8 @@ class PipelineInstrument(object):
       # Prunes upstream transforms that don't contribute to the targets the
       # instrumented pipeline run cares.
       return pf.PipelineFragment(
-          list(targets)).deduce_fragment().to_runner_api(use_fake_coders=True)
-    return self._pipeline.to_runner_api(use_fake_coders=True)
+          list(targets)).deduce_fragment().to_runner_api()
+    return self._pipeline.to_runner_api()
 
   def _required_components(
       self,
@@ -229,8 +227,7 @@ class PipelineInstrument(object):
   def prune_subgraph_for(self, pipeline, required_transform_ids):
     # Create the pipeline_proto to read all the components from. It will later
     # create a new pipeline proto from the cut out components.
-    pipeline_proto, context = pipeline.to_runner_api(
-        return_context=True, use_fake_coders=False)
+    pipeline_proto, context = pipeline.to_runner_api(return_context=True)
 
     # Get all the root transforms. The caching transforms will be subtransforms
     # of one of these roots.
@@ -280,7 +277,7 @@ class PipelineInstrument(object):
     # Create the pipeline_proto to read all the components from. It will later
     # create a new pipeline proto from the cut out components.
     pipeline_proto, context = self._background_caching_pipeline.to_runner_api(
-        return_context=True, use_fake_coders=False)
+        return_context=True)
 
     # Get all the sources we want to cache.
     sources = unbounded_sources(self._background_caching_pipeline)
@@ -465,8 +462,7 @@ class PipelineInstrument(object):
 
       v = TestStreamVisitor()
       self._pipeline.visit(v)
-      pipeline_proto = self._pipeline.to_runner_api(
-          return_context=False, use_fake_coders=True)
+      pipeline_proto = self._pipeline.to_runner_api(return_context=False)
       test_stream_id = ''
       for t_id, t in pipeline_proto.components.transforms.items():
         if t.unique_name == v.test_stream:
@@ -689,8 +685,8 @@ class PipelineInstrument(object):
 
       def visit_transform(self, transform_node):
         if transform_node.inputs:
-          input_list = list(transform_node.inputs)
-          for i, input_pcoll in enumerate(input_list):
+          main_inputs = dict(transform_node.main_inputs)
+          for tag, input_pcoll in main_inputs.items():
             key = self._pin.cache_key(input_pcoll)
 
             # Replace the input pcollection with the cached pcollection (if it
@@ -698,9 +694,9 @@ class PipelineInstrument(object):
             if key in self._pin._cached_pcoll_read:
               # Ignore this pcoll in the final pruned instrumented pipeline.
               self._pin._ignored_targets.add(input_pcoll)
-              input_list[i] = self._pin._cached_pcoll_read[key]
+              main_inputs[tag] = self._pin._cached_pcoll_read[key]
           # Update the transform with its new inputs.
-          transform_node.inputs = tuple(input_list)
+          transform_node.main_inputs = main_inputs
 
     v = ReadCacheWireVisitor(self)
     pipeline.visit(v)

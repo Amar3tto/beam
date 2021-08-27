@@ -17,9 +17,6 @@
 
 """Apache Beam SDK for Python setup file."""
 
-from __future__ import absolute_import
-from __future__ import print_function
-
 import os
 import sys
 import warnings
@@ -135,6 +132,8 @@ REQUIRED_PACKAGES = [
     # is Python standard since Python 3.7 and each Python version is compatible
     # with a specific dataclasses version.
     'dataclasses;python_version<"3.7"',
+    # orjson, only available on Python 3.6 and above
+    'orjson<4.0;python_version>="3.6"',
     # Dill doesn't have forwards-compatibility guarantees within minor version.
     # Pickles created with a new version of dill may not unpickle using older
     # version of dill. It is best to use the same version of dill on client and
@@ -145,18 +144,17 @@ REQUIRED_PACKAGES = [
     'future>=0.18.2,<1.0.0',
     'grpcio>=1.29.0,<2',
     'hdfs>=2.1.0,<3.0.0',
-    'httplib2>=0.8,<0.18.0',
-    'mock>=1.0.1,<3.0.0',
+    'httplib2>=0.8,<0.20.0',
     'numpy>=1.14.3,<1.21.0',
     'pymongo>=3.8.0,<4.0.0',
     'oauth2client>=2.0.1,<5',
     'protobuf>=3.12.2,<4',
-    'pyarrow>=0.15.1,<4.0.0',
+    'pyarrow>=0.15.1,<5.0.0',
     'pydot>=1.2.0,<2',
     'python-dateutil>=2.8.0,<3',
     'pytz>=2018.3',
     'requests>=2.24.0,<3.0.0',
-    'typing-extensions>=3.7.0,<3.8.0',
+    'typing-extensions>=3.7.0,<4',
     ]
 
 # [BEAM-8181] pyarrow cannot be installed on 32-bit Windows platforms.
@@ -167,8 +165,7 @@ if sys.platform == 'win32' and sys.maxsize <= 2**32:
 
 REQUIRED_TEST_PACKAGES = [
     'freezegun>=0.3.12',
-    'nose>=1.3.7',
-    'nose_xunitmp>=0.4.1',
+    'mock>=1.0.1,<3.0.0',
     'pandas>=1.0,<1.3.0',
     'parameterized>=0.7.1,<0.8.0',
     'pyhamcrest>=1.9,!=1.10.0,<2.0.0',
@@ -187,10 +184,11 @@ GCP_REQUIREMENTS = [
     'cachetools>=3.1.0,<5',
     'google-apitools>=0.5.31,<0.5.32',
     'google-auth>=1.18.0,<2',
-    'google-cloud-datastore>=1.7.1,<2',
+    'google-cloud-datastore>=1.8.0,<2',
     'google-cloud-pubsub>=0.39.0,<2',
+    'google-cloud-bigquery-storage>=2.4.0',
     # GCP packages required by tests
-    'google-cloud-bigquery>=1.6.0,<2',
+    'google-cloud-bigquery>=1.6.0,<3',
     'google-cloud-core>=0.28.1,<2',
     'google-cloud-bigtable>=0.31.1,<2',
     'google-cloud-spanner>=1.13.0,<2',
@@ -200,13 +198,16 @@ GCP_REQUIREMENTS = [
     'google-cloud-language>=1.3.0,<2',
     'google-cloud-videointelligence>=1.8.0,<2',
     'google-cloud-vision>=0.38.0,<2',
+    'google-cloud-recommendations-ai>=0.1.0,<=0.2.0'
 ]
 
 INTERACTIVE_BEAM = [
     'facets-overview>=1.0.0,<2',
     'ipython>=5.8.0,<8',
     'ipykernel>=5.2.0,<6',
-    'jupyter-client>=6.1.11,<7',
+    # Skip version 6.1.13 due to
+    # https://github.com/jupyter/jupyter_client/issues/637
+    'jupyter-client>=6.1.11,<6.1.13',
     'timeloop>=1.0.2,<2',
 ]
 
@@ -217,7 +218,7 @@ INTERACTIVE_BEAM_TEST = [
     # headless chrome based integration tests
     'selenium>=3.141.0,<4',
     'needle>=0.5.0,<1',
-    'chromedriver-binary>=88,<89',
+    'chromedriver-binary>=91,<92',
     # use a fixed major version of PIL for different python versions
     'pillow>=7.1.1,<8',
 ]
@@ -288,7 +289,6 @@ setuptools.setup(
     ]),
     install_requires=REQUIRED_PACKAGES,
     python_requires=python_requires,
-    test_suite='nose.collector',
     # BEAM-8840: Do NOT use tests_require or setup_requires.
     extras_require={
         'docs': ['Sphinx>=1.5.2,<2.0'],
@@ -315,10 +315,6 @@ setuptools.setup(
     ],
     license='Apache License, Version 2.0',
     keywords=PACKAGE_KEYWORDS,
-    entry_points={
-        'nose.plugins.0.10': [
-            'beam_test_plugin = test_config:BeamTestPlugin',
-        ]},
     cmdclass={
         'build_py': generate_protos_first(build_py),
         'develop': generate_protos_first(develop),
