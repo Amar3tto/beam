@@ -60,7 +60,7 @@ jobs:
       github.event_name == 'pull_request_target' || 
       startsWith(github.event.comment.body, 'Run PythonIT PreCommit') || 
       github.event_name == 'schedule'
-    runs-on: [self-hosted, ubuntu-20.04, main]
+    runs-on: [self-hosted, ubuntu-20.04]
     steps:
       - name: Check out repository code
         uses: actions/checkout@v3
@@ -71,7 +71,7 @@ jobs:
         run: |
           echo "comment_body=Run PythonIT PreCommit (${{ matrix.python_version }})" >> $GITHUB_OUTPUT
       - name: Rerun on comment
-        if: github.event.comment.body  == steps.set_comment_body.outputs.comment_body
+        if: github.event.comment.body == steps.set_comment_body.outputs.comment_body
         uses: ./.github/actions/rerun-job-action
         with:
           pull_request_url: ${{ github.event.issue.pull_request.url }}
