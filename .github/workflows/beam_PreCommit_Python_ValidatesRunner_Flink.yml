@@ -45,7 +45,7 @@ on:
       - 'runners/flink/**'
       - 'runners/java-fn-execution/**'
       - 'runners/reference/**'
-      - '.github/workflows/beam_PreCommit_Python_ValidatesRunner_Flink.yml']
+      - '.github/workflows/beam_PreCommit_Python_ValidatesRunner_Flink.yml'
   schedule:
     - cron: '* */6 * * *'
 
