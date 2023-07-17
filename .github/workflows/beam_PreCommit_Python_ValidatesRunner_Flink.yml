@@ -17,35 +17,35 @@ name: PreCommit Python Validates Runner Flink
 
 on:
   pull_request_target:
-    branches: [ "master", "release-*" ]
+    branches: ['master', 'release-*']
     paths:
-      - "model/**"
-      - "sdks/python/**"
-      - "release/**"
-      - "sdks/java/io/kafka/**"
-      - "runners/core-construction-java/**"
-      - "runners/core-java/**"
-      - "runners/extensions-java/**"
-      - "runners/flink/**"
-      - "runners/java-fn-execution/**"
-      - "runners/reference/**"
+      - 'model/**'
+      - 'sdks/python/**'
+      - 'release/**'
+      - 'sdks/java/io/kafka/**'
+      - 'runners/core-construction-java/**'
+      - 'runners/core-java/**'
+      - 'runners/extensions-java/**'
+      - 'runners/flink/**'
+      - 'runners/java-fn-execution/**'
+      - 'runners/reference/**'
   issue_comment:
     types: [created]
   push:
     tags: ['v*']
     branches: ['master', 'release-*']
     paths:
-      - "model/**"
-      - "sdks/python/**"
-      - "release/**"
-      - "sdks/java/io/kafka/"
-      - "runners/core-construction-java/**"
-      - "runners/core-java/**"
-      - "runners/extensions-java/**"
-      - "runners/flink/**"
-      - "runners/java-fn-execution/**"
-      - "runners/reference/**"
-      - ".github/workflows/beam_PreCommit_Python_ValidatesRunner_Flink.yml"]
+      - 'model/**'
+      - 'sdks/python/**'
+      - 'release/**'
+      - 'sdks/java/io/kafka/**'
+      - 'runners/core-construction-java/**'
+      - 'runners/core-java/**'
+      - 'runners/extensions-java/**'
+      - 'runners/flink/**'
+      - 'runners/java-fn-execution/**'
+      - 'runners/reference/**'
+      - '.github/workflows/beam_PreCommit_Python_ValidatesRunner_Flink.yml']
   schedule:
     - cron: '* */6 * * *'
 
@@ -85,7 +85,7 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
       - name: Rerun on comment
-        if: github.event.comment.body == steps.set_comment_body.outputs.comment_body
+        if: github.event.comment.body == 'Run Python_ValidatesRunner_Flink PreCommit'
         uses: ./.github/actions/rerun-job-action
         with:
           pull_request_url: ${{ github.event.issue.pull_request.url }}
@@ -112,4 +112,4 @@ jobs:
         uses: actions/upload-artifact@v3
         with:
           name: python-code-coverage-report
-          path: "**/pytest*.xml"
+          path: '**/pytest*.xml'
