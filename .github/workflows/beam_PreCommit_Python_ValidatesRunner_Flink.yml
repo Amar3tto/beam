@@ -84,7 +84,7 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
       - name: Rerun on comment
-        if: github.event.comment.body == steps.set_comment_body.outputs.comment_body
+        if: github.event.comment.body == 'Run Python_ValidatesRunner_Flink PreCommit'
         uses: ./.github/actions/rerun-job-action
         with:
           pull_request_url: ${{ github.event.issue.pull_request.url }}
