@@ -107,7 +107,7 @@ jobs:
         with:
           cache-read-only: false
       - name: run Python ValidatesRunner Flink PreCommit script
-        run: ./gradlew :sdks:python:test-suites:portable:py3.11:flinkValidatesRunner
+        run: ./gradlew :sdks:python:test-suites:portable:py311:flinkValidatesRunner
       - name: Archive code coverage results
         uses: actions/upload-artifact@v3
         with:
