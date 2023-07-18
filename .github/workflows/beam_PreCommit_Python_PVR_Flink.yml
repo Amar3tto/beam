@@ -114,6 +114,7 @@ jobs:
         uses: docker/setup-buildx-action@v2
         with:
           install: true
+          driver: 'docker'
       - name: run Python PVR Flink PreCommit script
         run: ./gradlew :sdks:python:test-suites:portable:py311:flinkValidatesRunner -PpythonVersion=3.11
       - name: Archive code coverage results
