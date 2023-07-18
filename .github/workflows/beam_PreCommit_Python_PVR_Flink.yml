@@ -114,7 +114,12 @@ jobs:
         uses: docker/setup-buildx-action@v2
         with:
           install: true
-          buildkitd-flags: ['--load', '--allow-insecure-entitlement security.insecure', '--allow-insecure-entitlement network.host']
+          buildkitd-flags: |
+            --load
+            --allow-insecure-entitlement
+            security.insecure
+            --allow-insecure-entitlement
+            network.host
       - name: run Python PVR Flink PreCommit script
         run: ./gradlew :sdks:python:test-suites:portable:py311:flinkValidatesRunner -PpythonVersion=3.11
       - name: Archive code coverage results
