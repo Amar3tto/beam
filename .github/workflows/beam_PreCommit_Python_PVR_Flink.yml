@@ -96,7 +96,7 @@ jobs:
       - name: Install Python
         uses: actions/setup-python@v4
         with:
-          python-version: 3.8
+          python-version: 3.11
       - name: Install Java
         uses: actions/setup-java@v3.8.0
         with:
@@ -118,9 +118,9 @@ jobs:
       - name: run Python PVR Flink PreCommit script
         uses: ./.github/actions/gradle-command-self-hosted-action
         with:
-          gradle-command: :sdks:python:test-suites:portable:py38:flinkValidatesRunner
+          gradle-command: :sdks:python:test-suites:portable:py311:flinkValidatesRunner
           arguments: |
-            -PpythonVersion=3.8 \
+            -PpythonVersion=3.11 \
       - name: Archive code coverage results
         uses: actions/upload-artifact@v3
         with:
