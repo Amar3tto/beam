@@ -66,6 +66,7 @@ permissions:
 jobs:
   beam_PreCommit_Java_Examples_Dataflow:
     name: beam_PreCommit_Java_Examples_Dataflow
+    timeout-minutes: 60
     runs-on: [self-hosted, ubuntu-20.04, main]
     if: |
       github.event_name == 'push' ||

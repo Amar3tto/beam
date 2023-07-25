@@ -53,6 +53,7 @@ permissions:
 jobs:
   beam_PreCommit_Typescript:
     name: beam_PreCommit_Typescript
+    timeout-minutes: 120
     runs-on: [self-hosted, ubuntu-20.04, main]
     if: |
       github.event_name == 'push' ||
