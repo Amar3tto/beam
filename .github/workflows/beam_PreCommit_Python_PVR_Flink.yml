@@ -78,7 +78,7 @@ jobs:
       github.event_name == 'pull_request_target' || 
       github.event.comment.body == 'Run Python_PVR_Flink PreCommit' || 
       github.event_name == 'schedule'
-    runs-on: [self-hosted, ubuntu-20.04]
+    runs-on: [self-hosted, ubuntu-20.04, main]
     steps:
       - name: Check out repository code
         uses: actions/checkout@v3
@@ -97,9 +97,6 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: 3.11
-      - name: Upgrade Python setuptools
-        shell: bash
-        run: pip install --upgrade pip setuptools wheel
       - name: Install Java
         uses: actions/setup-java@v3.8.0
         with:
