@@ -88,4 +88,6 @@ jobs:
         with:
           cache-read-only: false
       - name: run pythonLintPreCommit script
-        run: ./gradlew :pythonLintPreCommit
+        uses: ./.github/actions/gradle-command-self-hosted-action
+        with:
+          gradle-command: :pythonLintPreCommit

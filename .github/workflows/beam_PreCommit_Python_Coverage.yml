@@ -85,7 +85,9 @@ jobs:
         with:
           cache-read-only: false
       - name: Run preCommitPyCoverage
-        run: ./gradlew :sdks:python:test-suites:tox:py38:preCommitPyCoverage 
+        uses: ./.github/actions/gradle-command-self-hosted-action
+        with:
+          gradle-command: :sdks:python:test-suites:tox:py38:preCommitPyCoverage
       - name: Archive code coverage results
         uses: actions/upload-artifact@v3
         with:

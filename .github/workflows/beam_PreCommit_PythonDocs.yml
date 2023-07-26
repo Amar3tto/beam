@@ -87,4 +87,6 @@ jobs:
         with:
           cache-read-only: false
       - name: run pythonDocsPreCommit script
-        run: ./gradlew :pythonDocsPreCommit
+        uses: ./.github/actions/gradle-command-self-hosted-action
+        with:
+          gradle-command: :pythonDocsPreCommit

@@ -82,4 +82,6 @@ jobs:
         with:
           cache-read-only: false
       - name: run websitePreCommit script
-        run: ./gradlew :websitePreCommit
+        uses: ./.github/actions/gradle-command-self-hosted-action
+        with:
+          gradle-command: :websitePreCommit
