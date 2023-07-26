@@ -115,7 +115,6 @@ jobs:
         uses: docker/setup-buildx-action@v2
         with:
           install: true
-          buildkitd-flags: --load
       - name: Authenticate on GCP
         uses: google-github-actions/setup-gcloud@v0
         with:
