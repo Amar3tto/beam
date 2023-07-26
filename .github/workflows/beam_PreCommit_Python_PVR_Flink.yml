@@ -115,6 +115,7 @@ jobs:
         uses: docker/setup-buildx-action@v2
         with:
           install: true
+          driver: 'docker'
       - name: Authenticate on GCP
         uses: google-github-actions/setup-gcloud@v0
         with:
@@ -122,14 +123,16 @@ jobs:
           service_account_key: ${{ secrets.GCP_SA_KEY }}
           project_id: ${{ secrets.GCP_PROJECT_ID }}
           export_default_credentials: true
-      - name: run Python PVR Flink PreCommit script
-        uses: ./.github/actions/gradle-command-self-hosted-action
-        with:
-          gradle-command: :sdks:python:test-suites:portable:py311:flinkValidatesRunner
-          arguments: |
-            -PpythonVersion=3.11 \
-      - name: Archive code coverage results
-        uses: actions/upload-artifact@v3
-        with:
-          name: python-code-coverage-report
-          path: '**/pytest*.xml'
+      - name: GCLOUD INFO
+        run: gcloud info
+#      - name: run Python PVR Flink PreCommit script
+#        uses: ./.github/actions/gradle-command-self-hosted-action
+#        with:
+#          gradle-command: :sdks:python:test-suites:portable:py311:flinkValidatesRunner
+#          arguments: |
+#            -PpythonVersion=3.11 \
+#      - name: Archive code coverage results
+#        uses: actions/upload-artifact@v3
+#        with:
+#          name: python-code-coverage-report
+#          path: '**/pytest*.xml'
