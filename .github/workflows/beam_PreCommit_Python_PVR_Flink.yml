@@ -73,6 +73,7 @@ concurrency:
 jobs:
   beam_PreCommit_Python_PVR_Flink:
     name: beam_PreCommit_Python_PVR_Flink
+    timeout-minutes: 120
     if: |
       github.event_name == 'push' || 
       github.event_name == 'pull_request_target' || 
@@ -110,11 +111,11 @@ jobs:
         uses: gradle/gradle-build-action@v2
         with:
           cache-read-only: false
-#      - name: Setup Buildx
-#        uses: docker/setup-buildx-action@v2
-#        with:
-#          install: true
-#          driver: 'docker'
+      - name: Setup Buildx
+        uses: docker/setup-buildx-action@v2
+        with:
+          install: true
+          buildkitd-flags: --load
       - name: Authenticate on GCP
         uses: google-github-actions/setup-gcloud@v0
         with:
