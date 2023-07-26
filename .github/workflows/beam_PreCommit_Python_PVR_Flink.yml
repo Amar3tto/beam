@@ -110,11 +110,11 @@ jobs:
         uses: gradle/gradle-build-action@v2
         with:
           cache-read-only: false
-      - name: Setup Buildx
-        uses: docker/setup-buildx-action@v2
-        with:
-          install: true
-          driver: 'docker'
+#      - name: Setup Buildx
+#        uses: docker/setup-buildx-action@v2
+#        with:
+#          install: true
+#          driver: 'docker'
       - name: Authenticate on GCP
         uses: google-github-actions/setup-gcloud@v0
         with:
