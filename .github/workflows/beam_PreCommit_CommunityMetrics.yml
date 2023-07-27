@@ -102,4 +102,4 @@ jobs:
         with:
           gradle-command: :communityMetricsPreCommit
           arguments: |
-            -PKUBE_CONFIG_PATH='$HOME/.kube/config' \
+            -PKUBE_CONFIG_PATH='$HOME/.kube/config'
