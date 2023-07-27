@@ -96,7 +96,10 @@ jobs:
         with:
           cache-read-only: false
       - name: Setup Buildx
-        uses: docker/setup-buildx-action@v1
+        uses: docker/setup-buildx-action@v2
+        with:
+          install: true
+          driver: 'docker'
       - name: Set PY_VER_CLEAN
         id: set_py_ver_clean
         run: |
