@@ -93,10 +93,12 @@ jobs:
         uses: gradle/gradle-build-action@v2
         with:
           cache-read-only: false
+      - name: run shadowJar script
+        run: ./gradlew runners:flink:1.16:job-server:shadowJar
       - name: run validatesPortableRunnerBatch script
         uses: ./.github/actions/gradle-command-self-hosted-action
         with:
-          gradle-command: :runners:flink:1.15:job-server:validatesPortableRunnerBatch
+          gradle-command: :runners:flink:1.16:job-server:validatesPortableRunnerBatch
       - name: Upload test report
         uses: actions/upload-artifact@v3
         with:
