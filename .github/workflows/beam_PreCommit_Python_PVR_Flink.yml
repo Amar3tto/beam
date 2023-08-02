@@ -105,16 +105,17 @@ jobs:
         with:
           install: true
           driver: 'docker'
+      - name: Setup Gcloud
+        uses: google-github-actions/setup-gcloud@v1
       - name: run Python PVR Flink PreCommit script
-        run: docker inspect
 #        run: ./gradlew :sdks:python:test-suites:portable:py311:flinkValidatesRunner --debug -PpythonVersion=3.11
-#        uses: ./.github/actions/gradle-command-self-hosted-action
-#        with:
-#          gradle-command: :sdks:python:test-suites:portable:py311:flinkValidatesRunner
-#          arguments: |
-#            -PpythonVersion=3.11 \
-#      - name: Archive code coverage results
-#        uses: actions/upload-artifact@v3
-#        with:
-#          name: python-code-coverage-report
-#          path: '**/pytest*.xml'
+        uses: ./.github/actions/gradle-command-self-hosted-action
+        with:
+          gradle-command: :sdks:python:test-suites:portable:py311:flinkValidatesRunner
+          arguments: |
+            -PpythonVersion=3.11 \
+      - name: Archive code coverage results
+        uses: actions/upload-artifact@v3
+        with:
+          name: python-code-coverage-report
+          path: '**/pytest*.xml'
