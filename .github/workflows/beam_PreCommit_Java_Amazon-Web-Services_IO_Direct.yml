@@ -114,3 +114,8 @@ jobs:
         with:
           name: python-code-coverage-report
           path: "**/build/test-results/**/*.xml"
+      - name: Archive SpotBugs Results
+        uses: actions/upload-artifact@v3
+        with:
+          name: SpotBugs Results
+          path: "**/build/reports/spotbugs/*.html"
