@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-name: Beam PreCommit RAT
+name: PreCommit RAT
 
 on:
   push:
@@ -50,27 +50,22 @@ concurrency:
 
 jobs:
   beam_PreCommit_RAT:
-    if: |
-      github.event_name == 'push' || 
-      github.event_name == 'pull_request_target' || 
-      github.event.comment.body == 'Run RAT PreCommit' || 
-      github.event_name == 'schedule'
-    runs-on: [self-hosted, ubuntu-20.04]
     name: beam_PreCommit_RAT (Run RAT PreCommit)
+    runs-on: [self-hosted, ubuntu-20.04, main]
+    timeout-minutes: 120
+    if: |
+      github.event_name == 'push' ||
+      github.event_name == 'pull_request_target' ||
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
+      github.event.comment.body == 'Run RAT PreCommit'
     steps:
-      - name: Check out repository code
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v3
+      - name: Setup repository
+        uses: ./.github/actions/setup-action
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
-      - name: Rerun on comment
-        if: github.event.comment.body == 'Run RAT PreCommit'
-        uses: ./.github/actions/rerun-job-action
-        with:
-          pull_request_url: ${{ github.event.issue.pull_request.url }}
-          github_repository: ${{ github.repository }}
+          comment_phrase: 'Run RAT PreCommit'
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          github_job: ${{ github.job }}
-          github_current_run_id: ${{ github.run_id }}
       - name: Install Java
         uses: actions/setup-java@v3.8.0
         with:
@@ -81,4 +76,6 @@ jobs:
         with:
           cache-read-only: false
       - name: run RAT script
-        run: ./gradlew :rat
+        uses: ./.github/actions/gradle-command-self-hosted-action
+        with:
+          gradle-command: :rat
