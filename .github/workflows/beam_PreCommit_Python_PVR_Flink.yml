@@ -107,8 +107,8 @@ jobs:
           driver: 'docker'
 #      - name: Remove gcloud directory
 #        run: sudo rm -rf /home/runner/.config/gcloud
-      - name: Setup Gcloud
-        uses: google-github-actions/setup-gcloud@v1
+#      - name: Setup Gcloud
+#        uses: google-github-actions/setup-gcloud@v1
       - name: run Python PVR Flink PreCommit script
         uses: ./.github/actions/gradle-command-self-hosted-action
         with:
