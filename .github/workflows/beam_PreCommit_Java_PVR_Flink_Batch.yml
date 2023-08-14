@@ -83,8 +83,8 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           github_job: ${{ github.job }}
           github_current_run_id: ${{ github.run_id }}
-      - name: Remove gcloud directory
-        run: sudo rm -rf /home/runner/.config/gcloud
+#      - name: Remove gcloud directory
+#        run: sudo rm -rf /home/runner/.config/gcloud
       - name: Setup Gcloud
         uses: google-github-actions/setup-gcloud@v1
       - name: run validatesPortableRunnerBatch script
