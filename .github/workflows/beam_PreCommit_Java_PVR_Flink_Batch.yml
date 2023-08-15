@@ -61,38 +61,33 @@ permissions:
 
 jobs:
   beam_PreCommit_Java_PVR_Flink_Batch:
-    name: beam_PreCommit_Java_PVR_Flink_Batch (Run Java_PVR_Flink_Batch PreCommit)
+    name: ${{ matrix.job_name }} (${{ matrix.job_phrase }})
+    strategy:
+      matrix:
+        job_name: ["beam_PreCommit_Java_PVR_Flink_Batch"]
+        job_phrase: ["Run Java_PVR_Flink_Batch PreCommit"]
     timeout-minutes: 240
     runs-on: [self-hosted, ubuntu-20.04, main]
     if: |
       github.event_name == 'push' ||
       github.event_name == 'pull_request_target' ||
       github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
       github.event.comment.body == 'Run Java_PVR_Flink_Batch PreCommit'
     steps:
-      - name: Check out repository code
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v3
+      - name: Setup repository
+        uses: ./.github/actions/setup-action
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
-      - name: Rerun on comment
-        if: github.event.comment.body == 'Run Java_PVR_Flink_Batch PreCommit'
-        uses: ./.github/actions/rerun-job-action
-        with:
-          pull_request_url: ${{ github.event.issue.pull_request.url }}
-          github_repository: ${{ github.repository }}
+          comment_phrase: ${{ matrix.job_phrase }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          github_job: ${{ github.job }}
-          github_current_run_id: ${{ github.run_id }}
-#      - name: Remove gcloud directory
-#        run: sudo rm -rf /home/runner/.config/gcloud
-#      - name: Setup Gcloud
-#        uses: google-github-actions/setup-gcloud@v1
+          github_job: ${{ matrix.job_name }} (${{ matrix.job_phrase }})
       - name: run validatesPortableRunnerBatch script
         uses: ./.github/actions/gradle-command-self-hosted-action
         with:
           gradle-command: :runners:flink:1.15:job-server:validatesPortableRunnerBatch
         env:
-          CLOUDSDK_CONFIG: ${{ env.KUBELET_GCLOUD_CONFIG_PATH}}
+          CLOUDSDK_CONFIG: ${{ env.KUBELET_GCLOUD_CONFIG_PATH }}
       - name: Upload test report
         uses: actions/upload-artifact@v3
         with:

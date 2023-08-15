@@ -48,6 +48,7 @@ on:
       - '.github/workflows/beam_PreCommit_Python_PVR_Flink.yml'
   schedule:
     - cron: '* */6 * * *'
+  workflow_dispatch:
 
 #Setting explicit permissions for the action to avoid the default permissions which are `write-all` in case of pull_request_target event
 permissions:
@@ -67,48 +68,44 @@ permissions:
 
 # This allows a subsequently queued workflow run to interrupt previous runs
 concurrency:
-  group: '${{ github.workflow }} @ ${{ github.event.pull_request.head.label || github.head_ref || github.ref }}'
+  group: '${{ github.workflow }} @ ${{ github.event.pull_request.head.label || github.sha || github.head_ref || github.ref }}-${{ github.event.sender.login }}-${{ github.event.schedule }}'
   cancel-in-progress: true
 
 jobs:
   beam_PreCommit_Python_PVR_Flink:
-    name: beam_PreCommit_Python_PVR_Flink
+    name: ${{ matrix.job_name }} (${{ matrix.job_phrase }})
+    strategy:
+      matrix:
+        job_name: ["beam_PreCommit_Python_PVR_Flink"]
+        job_phrase: ["Run Python_PVR_Flink PreCommit"]
+    timeout-minutes: 120
     if: |
       github.event_name == 'push' || 
       github.event_name == 'pull_request_target' || 
-      github.event.comment.body == 'Run Python_PVR_Flink PreCommit' || 
-      github.event_name == 'schedule'
+      github.event_name == 'schedule' ||
+      github.event_name == 'workflow_dispatch' ||
+      github.event.comment.body == 'Run Python_PVR_Flink PreCommit'
     runs-on: [self-hosted, ubuntu-20.04]
     steps:
-      - name: Check out repository code
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v3
+      - name: Setup repository
+        uses: ./.github/actions/setup-action
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
-      - name: Rerun on comment
-        if: github.event.comment.body == 'Run Python_PVR_Flink PreCommit'
-        uses: ./.github/actions/rerun-job-action
-        with:
-          pull_request_url: ${{ github.event.issue.pull_request.url }}
-          github_repository: ${{ github.repository }}
+          comment_phrase: ${{ matrix.job_phrase }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          github_job: ${{ github.job }}
-          github_current_run_id: ${{ github.run_id }}
+          github_job: ${{ matrix.job_name }} (${{ matrix.job_phrase }})
       - name: Install Python
         uses: actions/setup-python@v4
         with:
           python-version: 3.11
-      - name: Upgrade Python setuptools
-        shell: bash
-        run: pip install --upgrade pip setuptools wheel
-      - name: Setup Buildx
-        uses: docker/setup-buildx-action@v2
-        with:
-          install: true
-          driver: 'docker'
-#      - name: Remove gcloud directory
-#        run: sudo rm -rf /home/runner/.config/gcloud
-#      - name: Setup Gcloud
-#        uses: google-github-actions/setup-gcloud@v1
+#      - name: Upgrade Python setuptools
+#        shell: bash
+#        run: pip install --upgrade pip setuptools wheel
+#      - name: Setup Buildx
+#        uses: docker/setup-buildx-action@v2
+#        with:
+#          install: true
+#          driver: 'docker'
       - name: run Python PVR Flink PreCommit script
         uses: ./.github/actions/gradle-command-self-hosted-action
         with:
@@ -116,7 +113,7 @@ jobs:
           arguments: |
             -PpythonVersion=3.11 \
         env:
-          CLOUDSDK_CONFIG: ${{ env.KUBELET_GCLOUD_CONFIG_PATH}}
+          CLOUDSDK_CONFIG: ${{ env.KUBELET_GCLOUD_CONFIG_PATH }}
       - name: Archive code coverage results
         uses: actions/upload-artifact@v3
         with:
