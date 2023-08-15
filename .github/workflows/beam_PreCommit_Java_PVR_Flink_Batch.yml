@@ -64,7 +64,7 @@ jobs:
     name: ${{ matrix.job_name }} (${{ matrix.job_phrase }})
     strategy:
       matrix:
-        job_name: ["beam_PreCommit_Java_PVR_Flink_Batch"]
+        job_name: [ "beam_PreCommit_Java_PVR_Flink_Batch" ]
         job_phrase: [ "Run Java_PVR_Flink_Batch PreCommit" ]
     timeout-minutes: 240
     runs-on: [self-hosted, ubuntu-20.04, main]
