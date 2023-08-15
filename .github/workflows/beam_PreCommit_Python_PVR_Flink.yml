@@ -77,7 +77,7 @@ jobs:
     strategy:
       matrix:
         job_name: ["beam_PreCommit_Python_PVR_Flink"]
-        job_phrase: ["Run Python_PVR_Flink PreCommit"]
+        job_phrase: [ "Run Python_PVR_Flink PreCommit" ]
     timeout-minutes: 120
     if: |
       github.event_name == 'push' || 

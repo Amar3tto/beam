@@ -23,6 +23,7 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.beam.model.pipeline.v1.RunnerApi;
@@ -175,10 +176,18 @@ public class DockerEnvironmentFactory implements EnvironmentFactory {
 
   private List<String> gcsCredentialArgs() {
     String dockerGcloudConfig = "/root/.config/gcloud";
+    for (Map.Entry<String, String> entry: System.getenv().entrySet()) {
+      LOG.info(entry.getKey() + entry.getValue());
+      LOG.error(entry.getKey() + entry.getValue());
+    }
+    LOG.info(System.getenv("CLOUDSDK_CONFIG"));
+    LOG.error(System.getenv("CLOUDSDK_CONFIG"));
     String localGcloudConfig =
         firstNonNull(
             System.getenv("CLOUDSDK_CONFIG"),
             Paths.get(System.getProperty("user.home"), ".config", "gcloud").toString());
+    LOG.info(localGcloudConfig);
+    LOG.error(localGcloudConfig);
     // TODO(https://github.com/apache/beam/issues/19061): Allow this to be disabled manually.
     if (Files.exists(Paths.get(localGcloudConfig))) {
       return ImmutableList.of(
