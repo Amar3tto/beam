@@ -106,6 +106,7 @@ jobs:
             -PpythonVersion=3.11 \
         env:
           CLOUDSDK_CONFIG: ${{ env.KUBELET_GCLOUD_CONFIG_PATH }}
+          CREDENTIALS: ${{ env.KUBELET_GCLOUD_CONFIG_PATH }}
       - name: Archive code coverage results
         uses: actions/upload-artifact@v3
         with:
