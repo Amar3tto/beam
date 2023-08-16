@@ -182,10 +182,7 @@ public class DockerEnvironmentFactory implements EnvironmentFactory {
     }
     LOG.info(System.getenv("CLOUDSDK_CONFIG"));
     LOG.error(System.getenv("CLOUDSDK_CONFIG"));
-    String localGcloudConfig =
-        firstNonNull(
-            System.getenv("CLOUDSDK_CONFIG"),
-            Paths.get(System.getProperty("user.home"), ".config", "gcloud").toString());
+    String localGcloudConfig = System.getenv("CLOUDSDK_CONFIG");
     LOG.info(localGcloudConfig);
     LOG.error(localGcloudConfig);
     // TODO(https://github.com/apache/beam/issues/19061): Allow this to be disabled manually.
