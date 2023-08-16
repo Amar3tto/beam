@@ -73,7 +73,11 @@ concurrency:
 
 jobs:
   beam_PreCommit_Java_Azure_IO_Direct:
-    name: beam_PreCommit_Java_Azure_IO_Direct (Run Java_Azure_IO_Direct PreCommit)
+    name: ${{ matrix.job_name }} (${{ matrix.job_phrase }})
+    strategy:
+      matrix:
+        job_name: ["beam_PreCommit_Java_Azure_IO_Direct"]
+        job_phrase: ["Run Java_Azure_IO_Direct PreCommit"]
     timeout-minutes: 60
     if: |
       github.event_name == 'push' ||
@@ -87,8 +91,9 @@ jobs:
       - name: Setup repository
         uses: ./.github/actions/setup-action
         with:
-          comment_phrase: 'Run Java_Azure_IO_Direct PreCommit'
+          comment_phrase: ${{ matrix.job_phrase }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
+          github_job: ${{ matrix.job_name }} (${{ matrix.job_phrase }})
       - name: run Azure IO build script
         uses: ./.github/actions/gradle-command-self-hosted-action
         with:
@@ -99,7 +104,7 @@ jobs:
       - name: Archive code coverage results
         uses: actions/upload-artifact@v3
         with:
-          name: python-code-coverage-report
+          name: java-code-coverage-report
           path: "**/build/test-results/**/*.xml"
       - name: Archive SpotBugs Results
         uses: actions/upload-artifact@v3
