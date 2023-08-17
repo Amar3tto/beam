@@ -13,41 +13,41 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-name: PreCommit Python PVR Flink
+name: PreCommit Java Pulsar IO Direct
 
 on:
-  pull_request_target:
-    branches: ['master', 'release-*']
-    paths:
-      - 'model/**'
-      - 'sdks/python/**'
-      - 'release/**'
-      - 'sdks/java/io/kafka/**'
-      - 'runners/core-construction-java/**'
-      - 'runners/core-java/**'
-      - 'runners/extensions-java/**'
-      - 'runners/flink/**'
-      - 'runners/java-fn-execution/**'
-      - 'runners/reference/**'
-  issue_comment:
-    types: [created]
   push:
     tags: ['v*']
     branches: ['master', 'release-*']
     paths:
-      - 'model/**'
-      - 'sdks/python/**'
-      - 'release/**'
-      - 'sdks/java/io/kafka/**'
-      - 'runners/core-construction-java/**'
-      - 'runners/core-java/**'
-      - 'runners/extensions-java/**'
-      - 'runners/flink/**'
-      - 'runners/java-fn-execution/**'
-      - 'runners/reference/**'
-      - '.github/workflows/beam_PreCommit_Python_PVR_Flink.yml'
+      - "sdks/java/io/pulsar/**"
+      - "sdks/java/io/common/**"
+      - "sdks/java/core/src/main/**"
+      - "build.gradle"
+      - "buildSrc/**"
+      - "gradle/**"
+      - "gradle.properties"
+      - "gradlew"
+      - "gradle.bat"
+      - "settings.gradle.kts"
+      - ".github/workflows/beam_PreCommit_Java_Pulsar_IO_Direct.yml"
+  pull_request_target:
+    branches: ['master', 'release-*']
+    paths:
+      - "sdks/java/io/pulsar/**"
+      - "sdks/java/io/common/**"
+      - "sdks/java/core/src/main/**"
+      - "build.gradle"
+      - "buildSrc/**"
+      - "gradle/**"
+      - "gradle.properties"
+      - "gradlew"
+      - "gradle.bat"
+      - "settings.gradle.kts"
+  issue_comment:
+    types: [created]
   schedule:
-    - cron: '* */6 * * *'
+    - cron: '0 */6 * * *'
   workflow_dispatch:
 
 #Setting explicit permissions for the action to avoid the default permissions which are `write-all` in case of pull_request_target event
@@ -72,20 +72,20 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  beam_PreCommit_Python_PVR_Flink:
+  beam_PreCommit_Java_Pulsar_IO_Direct:
     name: ${{ matrix.job_name }} (${{ matrix.job_phrase }})
     strategy:
       matrix:
-        job_name: ["beam_PreCommit_Python_PVR_Flink"]
-        job_phrase: [ "Run Python_PVR_Flink PreCommit" ]
-    timeout-minutes: 120
+        job_name: ["beam_PreCommit_Java_Pulsar_IO_Direct"]
+        job_phrase: ["Run Java_Pulsar_IO_Direct PreCommit"]
+    timeout-minutes: 60
     if: |
-      github.event_name == 'push' || 
-      github.event_name == 'pull_request_target' || 
+      github.event_name == 'push' ||
+      github.event_name == 'pull_request_target' ||
       github.event_name == 'schedule' ||
       github.event_name == 'workflow_dispatch' ||
-      github.event.comment.body == 'Run Python_PVR_Flink PreCommit'
-    runs-on: [self-hosted, ubuntu-20.04]
+      github.event.comment.body == 'Run Java_Pulsar_IO_Direct PreCommit'
+    runs-on: [self-hosted, ubuntu-20.04, main]
     steps:
       - uses: actions/checkout@v3
       - name: Setup repository
@@ -94,22 +94,20 @@ jobs:
           comment_phrase: ${{ matrix.job_phrase }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
           github_job: ${{ matrix.job_name }} (${{ matrix.job_phrase }})
-      - name: Install Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: 3.11
-      - name: run Python PVR Flink PreCommit script
+      - name: run Pulsar IO build script
         uses: ./.github/actions/gradle-command-self-hosted-action
         with:
-          gradle-command: :sdks:python:test-suites:portable:py311:flinkValidatesRunner
+          gradle-command: :sdks:java:io:pulsar:build
           arguments: |
-            -PpythonVersion=3.11 \
-        env:
-          CLOUDSDK_CONFIG: ${{ env.KUBELET_GCLOUD_CONFIG_PATH }}
-          CREDENTIALS: ${{ env.KUBELET_GCLOUD_CONFIG_PATH }}/application_default_credentials.json
-          DOCKER_MAC_CONTAINER: 123123
+            -PdisableSpotlessCheck=true \
+            -PdisableCheckStyle=true \
       - name: Archive code coverage results
         uses: actions/upload-artifact@v3
         with:
           name: python-code-coverage-report
-          path: '**/pytest*.xml'
+          path: "**/build/test-results/**/*.xml"
+      - name: Archive SpotBugs Results
+        uses: actions/upload-artifact@v3
+        with:
+          name: SpotBugs Results
+          path: "**/build/reports/spotbugs/*.html"
