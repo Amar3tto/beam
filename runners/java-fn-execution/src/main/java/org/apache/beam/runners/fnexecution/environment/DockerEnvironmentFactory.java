@@ -23,6 +23,7 @@ import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.apache.beam.model.pipeline.v1.RunnerApi;
@@ -175,6 +176,10 @@ public class DockerEnvironmentFactory implements EnvironmentFactory {
 
   private List<String> gcsCredentialArgs() {
     String dockerGcloudConfig = "/root/.config/gcloud";
+    for (Map.Entry<String, String> entry: System.getenv().entrySet()) {
+      LOG.info(entry.getKey() + entry.getValue());
+      LOG.error(entry.getKey() + entry.getValue());
+    }
     String localGcloudConfig =
         firstNonNull(
             System.getenv("CLOUDSDK_CONFIG"),
