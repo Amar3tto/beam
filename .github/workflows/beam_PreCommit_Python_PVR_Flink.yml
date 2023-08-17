@@ -71,6 +71,10 @@ concurrency:
   group: '${{ github.workflow }} @ ${{ github.event.pull_request.head.label || github.sha || github.head_ref || github.ref }}-${{ github.event.sender.login }}-${{ github.event.schedule }}'
   cancel-in-progress: true
 
+env:
+  CLOUDSDK_CONFIG: /var/lib/kubelet/pods/$POD_UID/volumes/kubernetes.io~empty-dir/gcloud
+  DOCKER_MAC_CONTAINER: testDockerMac
+
 jobs:
   beam_PreCommit_Python_PVR_Flink:
     name: ${{ matrix.job_name }} (${{ matrix.job_phrase }})
