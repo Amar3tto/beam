@@ -100,14 +100,13 @@ jobs:
           python-version: 3.11
       - name: run Python PVR Flink PreCommit script
         uses: ./.github/actions/gradle-command-self-hosted-action
+        env:
+          CLOUDSDK_CONFIG: ${{ env.KUBELET_GCLOUD_CONFIG_PATH}}
+          DOCKER_MAC_CONTAINER: testDockerMac
         with:
           gradle-command: :sdks:python:test-suites:portable:py311:flinkValidatesRunner
           arguments: |
             -PpythonVersion=3.11 \
-        env:
-          CLOUDSDK_CONFIG: ${{ env.KUBELET_GCLOUD_CONFIG_PATH }}
-          CREDENTIALS: ${{ env.KUBELET_GCLOUD_CONFIG_PATH }}/application_default_credentials.json
-          DOCKER_MAC_CONTAINER: 123123
       - name: Archive code coverage results
         uses: actions/upload-artifact@v3
         with:
