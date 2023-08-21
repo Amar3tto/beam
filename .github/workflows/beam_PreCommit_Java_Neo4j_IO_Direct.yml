@@ -60,7 +60,7 @@ jobs:
     name: ${{ matrix.job_name }} (${{ matrix.job_phrase }})
     strategy:
       matrix:
-        job_name: ["beam_PreCommit_Java_Neo4j_IO_Direct"]
+        job_name: [ "beam_PreCommit_Java_Neo4j_IO_Direct" ]
         job_phrase: ["Run Java_Neo4j_IO_Direct PreCommit"]
     timeout-minutes: 60
     if: |
