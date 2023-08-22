@@ -94,7 +94,7 @@ jobs:
       - name: run Kafka version compatibility test script
         uses: ./.github/actions/gradle-command-self-hosted-action
         with:
-          gradle-command: :sdks:java:io:kafka:kafkaVersionsCompatibilityTest
+          gradle-command: :sdks:java:io:kafka:kafkaVersionsCompatibilityTest --info
           arguments: |
             -PdisableSpotlessCheck=true \
             -PdisableCheckStyle=true \
