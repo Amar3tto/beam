@@ -22,8 +22,6 @@ on:
     paths: ['.github/workflows/beam_PostCommit_BeamMetrics_Publish.yml']
   issue_comment:
     types: [created]
-  schedule:
-    - cron: '0 */6 * * *'
   workflow_dispatch:
 
 #Setting explicit permissions for the action to avoid the default permissions which are `write-all` in case of pull_request_target event
@@ -68,7 +66,15 @@ jobs:
           comment_phrase: ${{ matrix.job_phrase }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
           github_job: ${{ matrix.job_name }} (${{ matrix.job_phrase }})
+      - name: Authenticate on GCP
+        uses: google-github-actions/setup-gcloud@v0
+        with:
+          service_account_email: ${{ secrets.GCP_SA_EMAIL }}
+          service_account_key: ${{ secrets.GCP_SA_KEY }}
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+      - name: Install gcloud Kubectl
+        run: gcloud components install kubectl
       - name: run Beam Metrics deployment script
         uses: ./.github/actions/gradle-command-self-hosted-action
         with:
-          gradle-command: :beam-test-infra-metrics:deploy
+          gradle-command: :beam-test-infra-metrics:deploy -PKUBE_CONFIG_PATH='$HOME/.kube/config'
