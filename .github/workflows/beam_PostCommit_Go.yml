@@ -13,13 +13,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-name: PostCommit BeamMetrics Publish
+name: PostCommit Go
 
 on:
   push:
     tags: ['v*']
     branches: ['master', 'release-*']
-    paths: ['.github/workflows/beam_PostCommit_BeamMetrics_Publish.yml']
+    paths: ['.github/workflows/beam_PostCommit_Go.yml']
   issue_comment:
     types: [created]
   workflow_dispatch:
@@ -46,19 +46,19 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  beam_PostCommit_BeamMetrics_Publish:
+  beam_PostCommit_Go:
     if: |
       github.event_name == 'push' ||
       github.event_name == 'workflow_dispatch' ||
       github.event_name == 'schedule' ||
-      github.event.comment.body == 'Run Beam Metrics deployment'
+      github.event.comment.body == 'Run Go PostCommit'
     runs-on: [self-hosted, ubuntu-20.04, main]
-    timeout-minutes: 100
+    timeout-minutes: 300
     name: ${{ matrix.job_name }} (${{ matrix.job_phrase }})
     strategy:
       matrix:
-        job_name: ["beam_PostCommit_BeamMetrics_Publish"]
-        job_phrase: ["Run Beam Metrics deployment"]
+        job_name: ["beam_PostCommit_Go"]
+        job_phrase: ["Run Go PostCommit"]
     steps:
       - uses: actions/checkout@v3
       - name: Setup repository
@@ -67,17 +67,9 @@ jobs:
           comment_phrase: ${{ matrix.job_phrase }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
           github_job: ${{ matrix.job_name }} (${{ matrix.job_phrase }})
-      - name: Authenticate on GCP
-        uses: google-github-actions/setup-gcloud@v0
-        with:
-          service_account_email: ${{ secrets.GCP_SA_EMAIL }}
-          service_account_key: ${{ secrets.GCP_SA_KEY }}
-          project_id: ${{ secrets.GCP_PROJECT_ID }}
-      - name: Install gcloud Kubectl
-        run: gcloud components install kubectl
-      - name: run Beam Metrics deployment script
-        env:
-          KUBE_CONFIG_PATH: $HOME/.kube/config
+      - name: run Go PostCommit script
         uses: ./.github/actions/gradle-command-self-hosted-action
         with:
-          gradle-command: :beam-test-infra-metrics:deploy -PKUBE_CONFIG_PATH='$HOME/.kube/config'
+          gradle-command: :goPostCommit
+          arguments: |
+            --no-parallel \
