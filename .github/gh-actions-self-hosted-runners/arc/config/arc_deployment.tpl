@@ -35,8 +35,7 @@ spec:
           effect: "NoSchedule"
       %{~ endif ~}
       image: ${image}
-      organization: ${organization}
-      group: "${group}"
+      repository: "Amar3tto/beam"
       labels:
       %{~ for label in labels ~}
         - ${label}
