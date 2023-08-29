@@ -98,17 +98,13 @@ jobs:
         uses: actions/setup-python@v4
         with:
           python-version: 3.11
-      - name: Test environment
-        env:
-          CLOUDSDK_CONFIG: ${{ env.KUBELET_GCLOUD_CONFIG_PATH}}
-          DOCKER_MAC_CONTAINER: testDockerMac
+      - name: configure passenv for tox
         run: |
-          env
+          sed -i '/^\[testenv\]$/,/^\[/ s/^passenv=TERM/passenv=TERM,CLOUDSDK_CONFIG/' sdks/python/tox.ini
       - name: run Python PVR Flink PreCommit script
         uses: ./.github/actions/gradle-command-self-hosted-action
         env:
           CLOUDSDK_CONFIG: ${{ env.KUBELET_GCLOUD_CONFIG_PATH}}
-          DOCKER_MAC_CONTAINER: testDockerMac
         with:
           gradle-command: :sdks:python:test-suites:portable:py311:flinkValidatesRunner
           arguments: |
