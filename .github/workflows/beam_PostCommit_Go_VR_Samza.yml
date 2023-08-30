@@ -13,13 +13,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-name: PostCommit Go
+name: PostCommit Go VR Samza
 
 on:
   push:
     tags: ['v*']
     branches: ['master', 'release-*']
-    paths: ['.github/workflows/beam_PostCommit_Go.yml']
+    paths: ['.github/workflows/beam_PostCommit_Go_VR_Samza.yml']
   issue_comment:
     types: [created]
   workflow_dispatch:
@@ -42,23 +42,22 @@ permissions:
 
 # This allows a subsequently queued workflow run to interrupt previous runs
 concurrency:
-  group: '${{ github.workflow }} @ ${{ github.event.pull_request.head.label || github.sha || github.head_ref || github.ref }}-${{ github.event.sender.login }}-${{ github.event.schedule }}'
+  group: '${{ github.workflow }} @ ${{ github.event.pull_request.head.label || github.sha || github.head_ref || github.ref }}-${{ github.event.sender.login }}'
   cancel-in-progress: true
 
 jobs:
-  beam_PostCommit_Go:
+  beam_PostCommit_Go_VR_Samza:
     if: |
       github.event_name == 'push' ||
       github.event_name == 'workflow_dispatch' ||
-      github.event_name == 'schedule' ||
-      github.event.comment.body == 'Run Go PostCommit'
+      github.event.comment.body == 'Run Go Samza ValidatesRunner'
     runs-on: [self-hosted, ubuntu-20.04, main]
-    timeout-minutes: 300
+    timeout-minutes: 100
     name: ${{ matrix.job_name }} (${{ matrix.job_phrase }})
     strategy:
       matrix:
-        job_name: ["beam_PostCommit_Go"]
-        job_phrase: ["Run Go PostCommit"]
+        job_name: ["beam_PostCommit_Go_VR_Samza"]
+        job_phrase: ["Run Go Samza ValidatesRunner"]
     steps:
       - uses: actions/checkout@v3
       - name: Setup repository
@@ -67,17 +66,9 @@ jobs:
           comment_phrase: ${{ matrix.job_phrase }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
           github_job: ${{ matrix.job_name }} (${{ matrix.job_phrase }})
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v1
-      - name: GCloud Docker credential helper
-        run: |
-          gcloud auth configure-docker us.gcr.io
-      - name: run Go PostCommit script
-        uses: ./.github/actions/gradle-command-self-hosted-action
+      - name: run Go Samza ValidatesRunner script
         env:
-          USER: github-actions
+          CLOUDSDK_CONFIG: ${{ env.KUBELET_GCLOUD_CONFIG_PATH}}
+        uses: ./.github/actions/gradle-command-self-hosted-action
         with:
-          gradle-command: :goPostCommit
-          arguments: |
-            --no-parallel \
-            -Pdocker-repository-root=us.gcr.io/apache-beam-testing/github-actions \
+          gradle-command: :sdks:go:test:samzaValidatesRunner
