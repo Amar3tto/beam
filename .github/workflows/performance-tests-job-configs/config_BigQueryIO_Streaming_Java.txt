@@ -13,7 +13,7 @@
 \"numRecords\":\"10485760\",
 \"keySizeBytes\":\"1\",
 \"valueSizeBytes\":\"1024\"
-},
+}",
 "--runner=DataflowRunner",
 "--maxNumWorkers=5",
 "--numWorkers=5",
