@@ -73,8 +73,6 @@ jobs:
           CONFIGWITHDATE=$(echo "${CURCONFIG/bqio_write_10GB_java_stream_/bqio_write_10GB_java_stream_$CURDATE}")
           echo "prepared_config=$CONFIGWITHDATE" >> $GITHUB_OUTPUT
       - name: run Java BigQueryIO Streaming Performance Test
-#        env:
-#          CLOUDSDK_CONFIG: ${{ env.KUBELET_GCLOUD_CONFIG_PATH}}
         uses: ./.github/actions/gradle-command-self-hosted-action
         with:
           gradle-command: :sdks:java:io:bigquery-io-perf-tests:integrationTest
