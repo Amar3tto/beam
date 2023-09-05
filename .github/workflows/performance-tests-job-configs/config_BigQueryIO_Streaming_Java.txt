@@ -1,5 +1,5 @@
-["--project=apache-beam-testing",
-"--tempLocation=gs://temp-storage-for-perf-tests/loadtests",
+["--tempLocation=gs://temp-storage-for-perf-tests/loadtests",
+"--project=apache-beam-testing",
 "--tempRoot=gs://temp-storage-for-perf-tests/loadtests",
 "--writeMethod=STREAMING_INSERTS",
 "--writeFormat=JSON",
