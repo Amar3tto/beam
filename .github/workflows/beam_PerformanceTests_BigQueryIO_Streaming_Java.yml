@@ -78,7 +78,7 @@ jobs:
           gradle-command: :sdks:java:io:bigquery-io-perf-tests:integrationTest
           arguments: |
             --tests org.apache.beam.sdk.bigqueryioperftests.BigQueryIOIT \
-            --debug \
+            --info \
             -DintegrationTestRunner=dataflow \
             -DintegrationTestPipelineOptions=${{ steps.set_config.outputs.prepared_config }} \
       - name: Archive JUnit Test Results
