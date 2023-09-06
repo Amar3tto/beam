@@ -49,7 +49,7 @@ env:
   GRADLE_ENTERPRISE_CACHE_PASSWORD: ${{ secrets.GE_CACHE_PASSWORD }}
 
 jobs:
-  beam_PerformanceTests_BiqQueryIO_Batch_Java_Avro:
+  beam_PerformanceTests_BigQueryIO_Batch_Java_Avro:
     if: |
       github.event_name == 'workflow_dispatch' ||
       github.event_name == 'schedule' ||
@@ -59,7 +59,7 @@ jobs:
     name: ${{ matrix.job_name }} (${{ matrix.job_phrase }})
     strategy:
       matrix:
-        job_name: ["beam_PerformanceTests_BiqQueryIO_Batch_Java_Avro"]
+        job_name: ["beam_PerformanceTests_BigQueryIO_Batch_Java_Avro"]
         job_phrase: ["Run BigQueryIO Batch Performance Test Java Avro"]
     steps:
       - uses: actions/checkout@v3
@@ -74,7 +74,7 @@ jobs:
         shell: bash
         run: |
           CURDATE=$(date '+%m%d%H%M%S' --utc)
-          CURCONFIG=$(cat ./.github/workflows/performance-tests-job-configs/config_BigQueryIO_Batch_Java_Avro.txt | tr '\n' ' ')
+          CURCONFIG=$(grep -v "^#.*" ./.github/workflows/performance-tests-job-configs/config_BigQueryIO_Batch_Java_Avro.txt | tr '\n' ' ')
           CONFIGWITHDATE=$(echo "${CURCONFIG/bqio_write_10GB_java_avro_/bqio_write_10GB_java_avro_$CURDATE}")
           echo "prepared_config=$CONFIGWITHDATE" >> $GITHUB_OUTPUT
       - name: run Java BigQueryIO Batch Avro Performance Test
