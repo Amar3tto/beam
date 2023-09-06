@@ -59,7 +59,7 @@ jobs:
     name: ${{ matrix.job_name }} (${{ matrix.job_phrase }})
     strategy:
       matrix:
-        job_name: ["beam_PerformanceTests_BigQueryIO_Streaming_Java"]
+        job_name: [ "beam_PerformanceTests_BigQueryIO_Streaming_Java" ]
         job_phrase: ["Run BigQueryIO Streaming Performance Test Java"]
     steps:
       - uses: actions/checkout@v3
