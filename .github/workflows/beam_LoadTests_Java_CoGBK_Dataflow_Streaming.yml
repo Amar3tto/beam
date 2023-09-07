@@ -83,7 +83,7 @@ jobs:
             -PloadTest.mainClass=org.apache.beam.sdk.loadtests.CoGroupByKeyLoadTest \
             --info \
             -Prunner=:runners:google-cloud-dataflow-java \
-            -PloadTest.args=${{ steps.set_config.outputs.prepared_config }} \
+            '-PloadTest.args=${{ steps.set_config.outputs.prepared_config }}' \
       - name: Archive JUnit Test Results
         uses: actions/upload-artifact@v3
         with:
