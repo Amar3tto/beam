@@ -21,8 +21,8 @@
 --tempLocation=gs://temp-storage-for-perf-tests/loadtests
 --influxMeasurement=java_streaming_cogbk_1
 --publishToInfluxDB=true
---sourceOptions={\"numRecords\":20000000,\"keySizeBytes\":10,\"valueSizeBytes\":90,\"numHotKeys\":1}
---coSourceOptions={\"numRecords\":2000000,\"keySizeBytes\":10,\"valueSizeBytes\":90,\"numHotKeys\":1000}
+--sourceOptions={"numRecords":20000000,"keySizeBytes":10,"valueSizeBytes":90,"numHotKeys":1}
+--coSourceOptions={"numRecords":2000000,"keySizeBytes":10,"valueSizeBytes":90,"numHotKeys":1000}
 --iterations=1
 --numWorkers=5
 --autoscalingAlgorithm=NONE
