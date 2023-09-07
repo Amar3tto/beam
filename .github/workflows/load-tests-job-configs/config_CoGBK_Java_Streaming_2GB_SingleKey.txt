@@ -31,3 +31,4 @@
 --coInputWindowDurationSec=1200
 --influxDatabase=beam_test_metrics
 --influxHost=http://10.128.0.96:8086
+--runner=DataflowRunner
