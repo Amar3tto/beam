@@ -23,7 +23,7 @@
 --metrics_dataset=load_test
 --metrics_table=python_dataflow_batch_combine_5
 --influx_measurement=python_batch_combine_5
---input_options={"num_records":2500000,"key_size":10,"value_size":90,"algorithm":"lcg"}
+--input_options=''{\\"num_records\\":2500000,\\"key_size\\":10,\\"value_size\\":90,\\"algorithm\\":\\"lcg\\"}''
 --num_workers=16
 --autoscaling_algorithm=NONE
 --fanout=8
