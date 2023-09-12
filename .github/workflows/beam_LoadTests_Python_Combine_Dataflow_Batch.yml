@@ -59,7 +59,7 @@ jobs:
     name: ${{ matrix.job_name }} (${{ matrix.job_phrase }})
     strategy:
       matrix:
-        job_name: [ "beam_LoadTests_Python_Combine_Dataflow_Batch" ]
+        job_name: ["beam_LoadTests_Python_Combine_Dataflow_Batch"]
         job_phrase: ["Run Load Tests Python Combine Dataflow Batch"]
     steps:
       - uses: actions/checkout@v3
@@ -94,6 +94,7 @@ jobs:
           arguments: |
             -PloadTest.mainClass=apache_beam.testing.load_tests.combine_test \
             -Prunner=DataflowRunner \
+            -PpythonVersion=3.8 \
             '-PloadTest.args=${{ steps.set_configs.outputs.prepared_config_1 }}' \
       - name: run Combine Dataflow Batch Python Load Test 2 (fanout 4)
         uses: ./.github/actions/gradle-command-self-hosted-action
@@ -102,6 +103,7 @@ jobs:
           arguments: |
             -PloadTest.mainClass=apache_beam.testing.load_tests.combine_test \
             -Prunner=DataflowRunner \
+            -PpythonVersion=3.8 \
             '-PloadTest.args=${{ steps.set_configs.outputs.prepared_config_2 }}' \
       - name: run Combine Dataflow Batch Python Load Test 3 (fanout 8)
         uses: ./.github/actions/gradle-command-self-hosted-action
