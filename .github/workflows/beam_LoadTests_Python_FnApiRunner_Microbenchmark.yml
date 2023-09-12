@@ -87,4 +87,4 @@ jobs:
             -PloadTest.mainClass=apache_beam.testing.load_tests.microbenchmarks_test \
             -Prunner=DirectRunner \
             -PpythonVersion=3.8 \
-            '-PloadTest.args=${{ steps.set_config.outputs.prepared_config }}' \
+            '-PloadTest.args=${{ steps.set_config.outputs.prepared_config }}'
