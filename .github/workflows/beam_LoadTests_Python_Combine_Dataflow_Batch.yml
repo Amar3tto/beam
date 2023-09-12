@@ -113,4 +113,4 @@ jobs:
             -PloadTest.mainClass=apache_beam.testing.load_tests.combine_test \
             -Prunner=DataflowRunner \
             -PpythonVersion=3.8 \
-            '-PloadTest.args=${{ steps.set_configs.outputs.prepared_config_3 }}' \
+            '-PloadTest.args=${{ steps.set_configs.outputs.prepared_config_3 }}'
