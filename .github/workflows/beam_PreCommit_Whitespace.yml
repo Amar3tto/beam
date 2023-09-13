@@ -25,8 +25,6 @@ on:
     paths: ['*.md', '*.build.gradle']
   issue_comment:
     types: [created]
-  schedule:
-    - cron: '0 */6 * * *'
   workflow_dispatch:
 
 permissions:

@@ -24,8 +24,6 @@ on:
     tags: ['v*']
     branches: ['master', 'release-*']
     paths: [ "sdks/python/apache_beam/**",".github/workflows/beam_PreCommit_PythonFormatter.yml"]
-  schedule:
-    - cron: '0 */6 * * *'
   workflow_dispatch:
 
 #Setting explicit permissions for the action to avoid the default permissions which are `write-all` in case of pull_request_target event

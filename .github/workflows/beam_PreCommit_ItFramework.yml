@@ -30,8 +30,6 @@ on:
       - 'it/**'
   issue_comment:
     types: [created]
-  schedule:
-    - cron: '10 */6 * * *'
   workflow_dispatch:
 
 # This allows a subsequently queued workflow run to interrupt previous runs
