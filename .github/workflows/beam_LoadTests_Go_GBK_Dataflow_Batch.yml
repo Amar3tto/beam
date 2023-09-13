@@ -118,7 +118,7 @@ jobs:
           arguments: |
             -PloadTest.mainClass=group_by_key \
             -Prunner=DataflowRunner \
-            '-PloadTest.args=${{ steps.set_configs.outputs.prepared_config_3 }}'
+            '-PloadTest.args=${{ steps.set_configs.outputs.prepared_config_3 }}' \
       - name: run GBK Dataflow Batch Go Load Test 4 (fanout 4)
         uses: ./.github/actions/gradle-command-self-hosted-action
         with:
@@ -126,7 +126,7 @@ jobs:
           arguments: |
             -PloadTest.mainClass=group_by_key \
             -Prunner=DataflowRunner \
-            '-PloadTest.args=${{ steps.set_configs.outputs.prepared_config_4 }}'
+            '-PloadTest.args=${{ steps.set_configs.outputs.prepared_config_4 }}' \
       - name: run GBK Dataflow Batch Go Load Test 5 (fanout 8)
         uses: ./.github/actions/gradle-command-self-hosted-action
         with:
@@ -134,7 +134,7 @@ jobs:
           arguments: |
             -PloadTest.mainClass=group_by_key \
             -Prunner=DataflowRunner \
-            '-PloadTest.args=${{ steps.set_configs.outputs.prepared_config_5 }}'
+            '-PloadTest.args=${{ steps.set_configs.outputs.prepared_config_5 }}' \
       - name: run GBK Dataflow Batch Go Load Test 6 (reiterate 4 times 10 kb)
         uses: ./.github/actions/gradle-command-self-hosted-action
         with:
@@ -142,7 +142,7 @@ jobs:
           arguments: |
             -PloadTest.mainClass=group_by_key \
             -Prunner=DataflowRunner \
-            '-PloadTest.args=${{ steps.set_configs.outputs.prepared_config_6 }}'
+            '-PloadTest.args=${{ steps.set_configs.outputs.prepared_config_6 }}' \
       - name: run GBK Dataflow Batch Go Load Test 7 (reiterate 4 times 2 mb)
         uses: ./.github/actions/gradle-command-self-hosted-action
         with:
@@ -150,4 +150,4 @@ jobs:
           arguments: |
             -PloadTest.mainClass=group_by_key \
             -Prunner=DataflowRunner \
-            '-PloadTest.args=${{ steps.set_configs.outputs.prepared_config_7 }}'
+            '-PloadTest.args=${{ steps.set_configs.outputs.prepared_config_7 }}' \

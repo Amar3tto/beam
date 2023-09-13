@@ -117,4 +117,4 @@ jobs:
           arguments: |
             -PloadTest.mainClass=pardo \
             -Prunner=DataflowRunner \
-            '-PloadTest.args=${{ steps.set_configs.outputs.prepared_config_4 }}' \
+            '-PloadTest.args=${{ steps.set_configs.outputs.prepared_config_4 }}'
