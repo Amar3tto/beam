@@ -109,7 +109,7 @@ jobs:
           arguments: |
             -PloadTest.mainClass=pardo \
             -Prunner=DataflowRunner \
-            '-PloadTest.args=${{ steps.set_configs.outputs.prepared_config_3 }}'
+            '-PloadTest.args=${{ steps.set_configs.outputs.prepared_config_3 }}' \
       - name: run ParDo Dataflow Batch Go Load Test 4 (100 counters)
         uses: ./.github/actions/gradle-command-self-hosted-action
         with:
@@ -117,4 +117,4 @@ jobs:
           arguments: |
             -PloadTest.mainClass=pardo \
             -Prunner=DataflowRunner \
-            '-PloadTest.args=${{ steps.set_configs.outputs.prepared_config_4 }}'
+            '-PloadTest.args=${{ steps.set_configs.outputs.prepared_config_4 }}' \
