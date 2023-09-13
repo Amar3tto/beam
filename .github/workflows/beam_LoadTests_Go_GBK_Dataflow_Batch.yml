@@ -91,7 +91,7 @@ jobs:
           echo "prepared_config_5=$CURCONFIG" >> $GITHUB_OUTPUT
           CURCONFIG=$(grep -v "^#.*" ./.github/workflows/load-tests-job-configs/config_GBK_Go_Batch_Reiteration_10KB.txt | tr '\n' ' ')
           CURCONFIG=$(echo "${CURCONFIG/load-tests-go-dataflow-batch-gbk-6-/load-tests-go-dataflow-batch-gbk-6-$CURDATE}")
-          echo "prepared_config_6=$CURCONFIG" >> $GITHUB_OUTPU
+          echo "prepared_config_6=$CURCONFIG" >> $GITHUB_OUTPUT
           CURCONFIG=$(grep -v "^#.*" ./.github/workflows/load-tests-job-configs/config_GBK_Go_Batch_Reiteration_2MB.txt | tr '\n' ' ')
           CURCONFIG=$(echo "${CURCONFIG/load-tests-go-dataflow-batch-gbk-7-/load-tests-go-dataflow-batch-gbk-7-$CURDATE}")
           echo "prepared_config_7=$CURCONFIG" >> $GITHUB_OUTPUT
