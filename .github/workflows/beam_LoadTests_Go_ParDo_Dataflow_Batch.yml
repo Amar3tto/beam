@@ -86,7 +86,7 @@ jobs:
           CURCONFIG=$(grep -v "^#.*" ./.github/workflows/load-tests-job-configs/config_ParDo_Go_Batch_100_Counters.txt | tr '\n' ' ')
           CURCONFIG=$(echo "${CURCONFIG/load-tests-go-dataflow-batch-pardo-4-/load-tests-go-dataflow-batch-pardo-4-$CURDATE}")
           echo "prepared_config_4=$CURCONFIG" >> $GITHUB_OUTPUT
-      - name: run ParDo Dataflow Batch Go Load Test 1 ()
+      - name: run ParDo Dataflow Batch Go Load Test 1 (10 iterations)
         uses: ./.github/actions/gradle-command-self-hosted-action
         with:
           gradle-command: :sdks:go:test:load:run
@@ -94,7 +94,7 @@ jobs:
             -PloadTest.mainClass=pardo \
             -Prunner=DataflowRunner \
             '-PloadTest.args=${{ steps.set_configs.outputs.prepared_config_1 }}' \
-      - name: run ParDo Dataflow Batch Go Load Test 2 ()
+      - name: run ParDo Dataflow Batch Go Load Test 2 (200 iterations)
         uses: ./.github/actions/gradle-command-self-hosted-action
         with:
           gradle-command: :sdks:go:test:load:run
@@ -102,7 +102,7 @@ jobs:
             -PloadTest.mainClass=pardo \
             -Prunner=DataflowRunner \
             '-PloadTest.args=${{ steps.set_configs.outputs.prepared_config_2 }}' \
-      - name: run ParDo Dataflow Batch Go Load Test 3 ()
+      - name: run ParDo Dataflow Batch Go Load Test 3 (10 counters)
         uses: ./.github/actions/gradle-command-self-hosted-action
         with:
           gradle-command: :sdks:go:test:load:run
@@ -110,7 +110,7 @@ jobs:
             -PloadTest.mainClass=pardo \
             -Prunner=DataflowRunner \
             '-PloadTest.args=${{ steps.set_configs.outputs.prepared_config_3 }}'
-      - name: run ParDo Dataflow Batch Go Load Test 4 ()
+      - name: run ParDo Dataflow Batch Go Load Test 4 (100 counters)
         uses: ./.github/actions/gradle-command-self-hosted-action
         with:
           gradle-command: :sdks:go:test:load:run

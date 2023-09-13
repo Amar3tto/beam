@@ -30,6 +30,6 @@
 --autoscaling_algorithm=NONE
 --environment_type=DOCKER
 --environment_config=gcr.io/apache-beam-testing/beam-sdk/beam_go_sdk:latest
---influxDatabase=beam_test_metrics
---influxHost=http://10.128.0.96:8086
+--influx_db_name=beam_test_metrics
+--influx_hostname=http://10.128.0.96:8086
 --runner=DataflowRunner
