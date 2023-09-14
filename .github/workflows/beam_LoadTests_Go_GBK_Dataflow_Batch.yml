@@ -150,4 +150,4 @@ jobs:
           arguments: |
             -PloadTest.mainClass=group_by_key \
             -Prunner=DataflowRunner \
-            '-PloadTest.args=${{ steps.set_configs.outputs.prepared_config_7 }}' \
+            '-PloadTest.args=${{ steps.set_configs.outputs.prepared_config_7 }}'
