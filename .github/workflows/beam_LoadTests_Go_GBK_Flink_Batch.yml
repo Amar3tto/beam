@@ -106,7 +106,7 @@ jobs:
         env:
           FLINK_NUM_WORKERS: 5
         run: |
-          ./.test-infra/dataproc/flink_cluster.sh create
+          cd ./.test-infra/dataproc; flink_cluster.sh create
       - name: run GBK Flink Batch Go Load Test 1 (10 b records)
         uses: ./.github/actions/gradle-command-self-hosted-action
         with:
@@ -143,7 +143,7 @@ jobs:
         env:
           FLINK_NUM_WORKERS: 16
         run: |
-          ./.test-infra/dataproc/flink_cluster.sh restart
+          cd ./.test-infra/dataproc; flink_cluster.sh restart
       - name: run GBK Flink Batch Go Load Test 4 (fanout 4)
         uses: ./.github/actions/gradle-command-self-hosted-action
         with:
