@@ -139,7 +139,7 @@ jobs:
             -PloadTest.mainClass=group_by_key \
             -Prunner=FlinkRunner \
             '-PloadTest.args=${{ steps.set_configs.outputs.prepared_config_6 }}' \
-      - name: Restart FLink with parallelism 16
+      - name: Restart Flink with parallelism 16
         env:
           FLINK_NUM_WORKERS: 16
         run: |
