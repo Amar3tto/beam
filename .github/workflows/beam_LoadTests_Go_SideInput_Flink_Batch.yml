@@ -13,7 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-name: Load Tests SideInput Dataflow Batch Go
+name: Load Tests SideInput Flink Batch Go
 
 on:
   issue_comment:
@@ -49,18 +49,18 @@ env:
   GRADLE_ENTERPRISE_CACHE_PASSWORD: ${{ secrets.GE_CACHE_PASSWORD }}
 
 jobs:
-  beam_LoadTests_Go_SideInput_Dataflow_Batch:
+  beam_LoadTests_Go_SideInput_Flink_Batch:
     if: |
       github.event_name == 'workflow_dispatch' ||
       github.event_name == 'schedule' ||
-      github.event.comment.body == 'Run Load Tests Go SideInput Dataflow Batch'
+      github.event.comment.body == 'Run Load Tests Go SideInput Flink Batch'
     runs-on: [self-hosted, ubuntu-20.04, main]
     timeout-minutes: 720
     name: ${{ matrix.job_name }} (${{ matrix.job_phrase }})
     strategy:
       matrix:
-        job_name: ["beam_LoadTests_Go_SideInput_Dataflow_Batch"]
-        job_phrase: ["Run Load Tests Go SideInput Dataflow Batch"]
+        job_name: ["beam_LoadTests_Go_SideInput_Flink_Batch"]
+        job_phrase: ["Run Load Tests Go SideInput Flink Batch"]
     steps:
       - uses: actions/checkout@v3
       - name: Setup repository
@@ -74,25 +74,34 @@ jobs:
         shell: bash
         run: |
           CURDATE=$(date '+%m%d%H%M%S' --utc)
-          CURCONFIG=$(grep -v "^#.*" ./.github/workflows/load-tests-job-configs/config_SideInput_Go_Batch_Dataflow_First_Iterable.txt | tr '\n' ' ')
-          CURCONFIG=$(echo "${CURCONFIG/load-tests-go-dataflow-batch-sideinput-3-/load-tests-go-dataflow-batch-sideinput-3-$CURDATE}")
+          CURCONFIG=$(grep -v "^#.*" ./.github/workflows/load-tests-job-configs/config_SideInput_Go_Batch_Flink_First_Iterable.txt | tr '\n' ' ')
+          CURCONFIG=$(echo "${CURCONFIG/load-tests-go-flink-batch-sideinput-3-/load-tests-go-flink-batch-sideinput-3-$CURDATE}")
           echo "prepared_config_1=$CURCONFIG" >> $GITHUB_OUTPUT
-          CURCONFIG=$(grep -v "^#.*" ./.github/workflows/load-tests-job-configs/config_SideInput_Go_Batch_Dataflow_Iterable.txt | tr '\n' ' ')
-          CURCONFIG=$(echo "${CURCONFIG/load-tests-go-dataflow-batch-sideinput-4-/load-tests-go-dataflow-batch-sideinput-4-$CURDATE}")
+          CURCONFIG=$(grep -v "^#.*" ./.github/workflows/load-tests-job-configs/config_SideInput_Go_Batch_Flink_Iterable.txt | tr '\n' ' ')
+          CURCONFIG=$(echo "${CURCONFIG/load-tests-go-flink-batch-sideinput-4-/load-tests-go-flink-batch-sideinput-4-$CURDATE}")
           echo "prepared_config_2=$CURCONFIG" >> $GITHUB_OUTPUT
-      - name: run SideInput Dataflow Batch Go Load Test 1 (first iterable)
+      - name: Start Flink with parallelism 10
+        env:
+          FLINK_NUM_WORKERS: 10
+        run: |
+          cd ./.test-infra/dataproc; ./flink_cluster.sh create
+      - name: run SideInput Flink Batch Go Load Test 1 (first iterable)
         uses: ./.github/actions/gradle-command-self-hosted-action
         with:
           gradle-command: :sdks:go:test:load:run
           arguments: |
             -PloadTest.mainClass=sideinput \
-            -Prunner=DataflowRunner \
+            -Prunner=FlinkRunner \
             '-PloadTest.args=${{ steps.set_configs.outputs.prepared_config_1 }}' \
-      - name: run SideInput Dataflow Batch Go Load Test 2 (iterable)
+      - name: run SideInput Flink Batch Go Load Test 2 (iterable)
         uses: ./.github/actions/gradle-command-self-hosted-action
         with:
           gradle-command: :sdks:go:test:load:run
           arguments: |
             -PloadTest.mainClass=sideinput \
-            -Prunner=DataflowRunner \
+            -Prunner=FlinkRunner \
             '-PloadTest.args=${{ steps.set_configs.outputs.prepared_config_2 }}'
+      - name: Teardown Flink
+        if: always()
+        run: |
+          ./.test-infra/dataproc/flink_cluster.sh delete
