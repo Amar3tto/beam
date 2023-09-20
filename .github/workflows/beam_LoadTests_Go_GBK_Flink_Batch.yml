@@ -79,16 +79,13 @@ jobs:
           comment_phrase: ${{ matrix.job_phrase }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
           github_job: ${{ matrix.job_name }} (${{ matrix.job_phrase }})
-      - name: Envs
-        run: |
-          env
       - name: Prepare configs
+        #Reads config files, exclude comments, append current date to the job_name parameter
         id: set_configs
         shell: bash
         run: |
           CURDATE=$(date '+%m%d%H%M%S' --utc)
           CONFIG_ARR=('config_GBK_Flink_Go_Batch_10b.txt' 'config_GBK_Flink_Go_Batch_100b.txt' 'config_GBK_Flink_Go_Batch_100kb.txt' 'config_GBK_Flink_Go_Batch_Fanout_4.txt' 'config_GBK_Flink_Go_Batch_Fanout_8.txt' 'config_GBK_Flink_Go_Batch_Reiteration_10KB.txt')
-        #Reads config files, exclude comments, append current date to the job_name parameter
           for INDEX in ${!CONFIG_ARR[@]}
           do
             CURCONFIG=$(grep -v "^#.*" ./.github/workflows/load-tests-job-configs/${CONFIG_ARR[INDEX]} | tr '\n' ' ')
