@@ -79,8 +79,12 @@ jobs:
           comment_phrase: ${{ matrix.job_phrase }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
           github_job: ${{ matrix.job_name }} (${{ matrix.job_phrase }})
+      - name: Teardown Flink
+        if: always()
+        run: |
+          ./.test-infra/dataproc/flink_cluster.sh delete
       - name: Prepare configs
-        #Reads config files, exclude comments, append current date to the job_name parameter
+        #Reads config files, excludes comments, appends current date to the job_name parameter
         id: set_configs
         shell: bash
         run: |
@@ -90,7 +94,7 @@ jobs:
           do
             CURCONFIG=$(grep -v "^#.*" ./.github/workflows/load-tests-job-configs/${CONFIG_ARR[INDEX]} | tr '\n' ' ')
             CURCONFIG=$(echo "${CURCONFIG/load-tests-go-flink-batch-gbk-$((INDEX + 1))-/load-tests-go-flink-batch-gbk-$((INDEX + 1))-$CURDATE}")
-            echo "prepared_config_$((INDEX + 1))=$CURCONFIG"
+            echo "prepared_config_$((INDEX + 1))=$CURCONFIG" >> $GITHUB_OUTPUT
           done
       - name: Start Flink with parallelism 5
         env:
