@@ -79,10 +79,6 @@ jobs:
           comment_phrase: ${{ matrix.job_phrase }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
           github_job: ${{ matrix.job_name }} (${{ matrix.job_phrase }})
-      - name: Teardown Flink
-        if: always()
-        run: |
-          ./.test-infra/dataproc/flink_cluster.sh delete
       - name: Prepare configs
         #Reads config files, excludes comments, appends current date to the job_name parameter
         id: set_configs
