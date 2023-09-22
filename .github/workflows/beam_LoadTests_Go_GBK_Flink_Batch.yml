@@ -102,7 +102,7 @@ jobs:
         run: |
           cd ./.test-infra/dataproc; ./flink_cluster.sh create
       - name: run GBK Flink Batch Go Load Test 1 (10 b records)
-        timeout-minutes: 1
+        timeout-minutes: 120
         uses: ./.github/actions/gradle-command-self-hosted-action
         with:
           gradle-command: :sdks:go:test:load:run
@@ -111,6 +111,7 @@ jobs:
             -Prunner=FlinkRunner \
             '-PloadTest.args=${{ steps.set_configs.outputs.prepared_config_1 }}' \
       - name: run GBK Flink Batch Go Load Test 2 (100 b records)
+        timeout-minutes: 120
         uses: ./.github/actions/gradle-command-self-hosted-action
         with:
           gradle-command: :sdks:go:test:load:run
@@ -119,6 +120,7 @@ jobs:
             -Prunner=FlinkRunner \
             '-PloadTest.args=${{ steps.set_configs.outputs.prepared_config_2 }}' \
       - name: run GBK Flink Batch Go Load Test 3 (100 kb records)
+        timeout-minutes: 120
         uses: ./.github/actions/gradle-command-self-hosted-action
         with:
           gradle-command: :sdks:go:test:load:run
@@ -127,6 +129,7 @@ jobs:
             -Prunner=FlinkRunner \
             '-PloadTest.args=${{ steps.set_configs.outputs.prepared_config_3 }}' \
       - name: run GBK Flink Batch Go Load Test 6 (reiterate 4 times 10 kb)
+        timeout-minutes: 120
         uses: ./.github/actions/gradle-command-self-hosted-action
         with:
           gradle-command: :sdks:go:test:load:run
@@ -140,6 +143,7 @@ jobs:
         run: |
           cd ./.test-infra/dataproc; ./flink_cluster.sh restart
       - name: run GBK Flink Batch Go Load Test 4 (fanout 4)
+        timeout-minutes: 120
         uses: ./.github/actions/gradle-command-self-hosted-action
         with:
           gradle-command: :sdks:go:test:load:run
@@ -148,6 +152,7 @@ jobs:
             -Prunner=FlinkRunner \
             '-PloadTest.args=${{ steps.set_configs.outputs.prepared_config_4 }}' \
       - name: run GBK Flink Batch Go Load Test 5 (fanout 8)
+        timeout-minutes: 120
         uses: ./.github/actions/gradle-command-self-hosted-action
         with:
           gradle-command: :sdks:go:test:load:run
