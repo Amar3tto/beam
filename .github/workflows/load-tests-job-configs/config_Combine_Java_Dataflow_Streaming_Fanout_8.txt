@@ -15,9 +15,9 @@
 # limitations under the License.
 
 --region=us-central1
---appName=load_tests_Java_Dataflow_batch_Combine_3
+--appName=load_tests_Java_Dataflow_streaming_Combine_3
 --tempLocation=gs://temp-storage-for-perf-tests/loadtests
---influxMeasurement=java_batch_combine_3
+--influxMeasurement=java_streaming_combine_3
 --publishToInfluxDB=true
 --sourceOptions={"numRecords":2500000,"keySizeBytes":10,"valueSizeBytes":90}
 --fanout=8
@@ -26,5 +26,6 @@
 --numWorkers=16
 --autoscalingAlgorithm=NONE
 --perKeyCombiner=TOP_LARGEST
---streaming=false
+--streaming=true
+--inputWindowDurationSec=1200
 --runner=DataflowRunner
