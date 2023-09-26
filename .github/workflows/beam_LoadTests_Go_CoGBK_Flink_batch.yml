@@ -79,19 +79,17 @@ jobs:
           comment_phrase: ${{ matrix.job_phrase }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
           github_job: ${{ matrix.job_name }} (${{ matrix.job_phrase }})
-      - name: Prepare configs
-        #Reads config files, excludes comments, appends current date to the job_name parameter
-        id: set_configs
-        shell: bash
-        run: |
-          CURDATE=$(date '+%m%d%H%M%S' --utc)
-          CONFIG_ARR=('config_CoGBK_Go_Batch_Flink_MultipleKey.txt' 'config_CoGBK_Go_Batch_Flink_Reiteration_10KB.txt' 'config_CoGBK_Go_Batch_Flink_Reiteration_2MB.txt')
-          for INDEX in ${!CONFIG_ARR[@]}
-          do
-            CURCONFIG=$(grep -v "^#.*" ./.github/workflows/load-tests-job-configs/${CONFIG_ARR[INDEX]} | tr '\n' ' ')
-            CURCONFIG=$(echo "${CURCONFIG/load-tests-go-flink-batch-cogbk-$((INDEX + 1))-/load-tests-go-flink-batch-cogbk-$((INDEX + 1))-$CURDATE}")
-            echo "prepared_config_$((INDEX + 1))=$CURCONFIG" >> $GITHUB_OUTPUT
-          done
+      - name: Prepare test arguments
+        uses: ./.github/actions/test-arguments-action
+        with:
+          test-type: load
+          test-language: go
+          argument-file-paths: |
+            ${{ github.workspace }}/.github/workflows/load-tests-job-configs/config_CoGBK_Go_Batch_Flink_MultipleKey.txt
+            ${{ github.workspace }}/.github/workflows/load-tests-job-configs/config_CoGBK_Go_Batch_Flink_Reiteration_10KB.txt
+            ${{ github.workspace }}/.github/workflows/load-tests-job-configs/config_CoGBK_Go_Batch_Flink_Reiteration_2MB.txt
+          arguments: |
+            --job_name=load-tests-go-flink-batch-cogbk-$(date '+%m%d%H%M%S' --utc)
       - name: Start Flink with parallelism 5
         env:
           FLINK_NUM_WORKERS: 5
@@ -105,7 +103,7 @@ jobs:
           arguments: |
             -PloadTest.mainClass=cogbk \
             -Prunner=FlinkRunner \
-            '-PloadTest.args=${{ steps.set_configs.outputs.prepared_config_1 }}' \
+            '-PloadTest.args=${{ env.beam_LoadTests_Go_CoGBK_Flink_Batch_test_arguments_1 }}' \
       - name: run CoGBK Flink Batch Go Load Test 2 (reiterate 4 times 10KB values)
         timeout-minutes: 240
         uses: ./.github/actions/gradle-command-self-hosted-action
@@ -114,7 +112,7 @@ jobs:
           arguments: |
             -PloadTest.mainClass=cogbk \
             -Prunner=FlinkRunner \
-            '-PloadTest.args=${{ steps.set_configs.outputs.prepared_config_2 }}' \
+            '-PloadTest.args=${{ env.beam_LoadTests_Go_CoGBK_Flink_Batch_test_arguments_2 }}' \
       - name: run CoGBK Flink Batch Go Load Test 3 (reiterate 4 times 2MB values)
         timeout-minutes: 240
         uses: ./.github/actions/gradle-command-self-hosted-action
@@ -123,7 +121,7 @@ jobs:
           arguments: |
             -PloadTest.mainClass=cogbk \
             -Prunner=FlinkRunner \
-            '-PloadTest.args=${{ steps.set_configs.outputs.prepared_config_3 }}'
+            '-PloadTest.args=${{ env.beam_LoadTests_Go_CoGBK_Flink_Batch_test_arguments_3 }}'
       - name: Teardown Flink
         if: always()
         run: |
