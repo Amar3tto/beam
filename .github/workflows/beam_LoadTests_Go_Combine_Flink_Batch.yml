@@ -79,19 +79,17 @@ jobs:
           comment_phrase: ${{ matrix.job_phrase }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
           github_job: ${{ matrix.job_name }} (${{ matrix.job_phrase }})
-      - name: Prepare configs
-        #Reads config files, excludes comments, appends current date to the job_name parameter
-        id: set_configs
-        shell: bash
-        run: |
-          CURDATE=$(date '+%m%d%H%M%S' --utc)
-          CONFIG_ARR=('config_Combine_Go_Batch_Flink_10b.txt' 'config_Combine_Go_Batch_Flink_Fanout_4.txt' 'config_Combine_Go_Batch_Flink_Fanout_8.txt')
-          for INDEX in ${!CONFIG_ARR[@]}
-          do
-            CURCONFIG=$(grep -v "^#.*" ./.github/workflows/load-tests-job-configs/${CONFIG_ARR[INDEX]} | tr '\n' ' ')
-            CURCONFIG=$(echo "${CURCONFIG/load-tests-go-flink-batch-combine-$((INDEX + 1))-/load-tests-go-flink-batch-combine-$((INDEX + 1))-$CURDATE}")
-            echo "prepared_config_$((INDEX + 1))=$CURCONFIG" >> $GITHUB_OUTPUT
-          done
+      - name: Prepare test arguments
+        uses: ./.github/actions/test-arguments-action
+        with:
+          test-type: load
+          test-language: go
+          argument-file-paths: |
+            ${{ github.workspace }}/.github/workflows/load-tests-job-configs/config_Combine_Go_Batch_Flink_10b.txt
+            ${{ github.workspace }}/.github/workflows/load-tests-job-configs/config_Combine_Go_Batch_Flink_Fanout_4.txt
+            ${{ github.workspace }}/.github/workflows/load-tests-job-configs/config_Combine_Go_Batch_Flink_Fanout_8.txt
+          arguments: |
+            --job_name=load-tests-go-flink-batch-combine-$(date '+%m%d%H%M%S' --utc)
       - name: Start Flink with parallelism 5
         env:
           FLINK_NUM_WORKERS: 5
@@ -105,7 +103,7 @@ jobs:
           arguments: |
             -PloadTest.mainClass=combine \
             -Prunner=FlinkRunner \
-            '-PloadTest.args=${{ steps.set_configs.outputs.prepared_config_1 }}' \
+            '-PloadTest.args=${{ env.beam_LoadTests_Go_Combine_Flink_Batch_test_arguments_1 }}' \
       - name: Restart Flink with parallelism 16
         env:
           FLINK_NUM_WORKERS: 16
@@ -119,7 +117,7 @@ jobs:
           arguments: |
             -PloadTest.mainClass=combine \
             -Prunner=FlinkRunner \
-            '-PloadTest.args=${{ steps.set_configs.outputs.prepared_config_2 }}' \
+            '-PloadTest.args=${{ env.beam_LoadTests_Go_Combine_Flink_Batch_test_arguments_2 }}' \
       - name: run Combine Flink Batch Go Load Test 3 (fanout 8)
         timeout-minutes: 240
         uses: ./.github/actions/gradle-command-self-hosted-action
@@ -128,7 +126,7 @@ jobs:
           arguments: |
             -PloadTest.mainClass=combine \
             -Prunner=FlinkRunner \
-            '-PloadTest.args=${{ steps.set_configs.outputs.prepared_config_3 }}'
+            '-PloadTest.args=${{ env.beam_LoadTests_Go_Combine_Flink_Batch_test_arguments_3 }}'
       - name: Teardown Flink
         if: always()
         run: |
