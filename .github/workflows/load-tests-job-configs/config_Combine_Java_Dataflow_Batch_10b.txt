@@ -26,5 +26,5 @@
 --numWorkers=5
 --autoscalingAlgorithm=NONE
 --perKeyCombiner=TOP_LARGEST
---streaming=true
+--streaming=false
 --runner=DataflowRunner
