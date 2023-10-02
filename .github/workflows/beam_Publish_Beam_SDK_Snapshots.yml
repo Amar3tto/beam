@@ -61,6 +61,7 @@ jobs:
       matrix:
         job_name: ["beam_Publish_Beam_SDK_Snapshots"]
         job_phrase: ["Run Publish Beam SDK Snapshots"]
+        sdk_name: ["go:container", "java:container:java8", "java:container:java11", "java:container:java17", "python:container:py38", "python:container:py39", "python:container:py310", "python:container:py311"]
     steps:
       - uses: actions/checkout@v3
       - name: Setup repository
@@ -69,10 +70,42 @@ jobs:
           comment_phrase: ${{ matrix.job_phrase }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
           github_job: ${{ matrix.job_name }} (${{ matrix.job_phrase }})
+      - name: Setup Java 11 environment
+        if: ${{ matrix.sdk_name == 'java:container:java11' }}
+        uses: ./.github/actions/setup-environment-action
+        with:
+          java-version: 11
+      - name: Setup Java 17 environment
+        if: ${{ matrix.sdk_name == 'java:container:java17' }}
+        uses: ./.github/actions/setup-environment-action
+        with:
+          java-version: |
+            8
+            17
+      - name: Setup Python 3.8 environment
+        if: ${{ matrix.sdk_name == 'python:container:py38' }}
+        uses: ./.github/actions/setup-environment-action
+        with:
+          python-version: '3.8'
+      - name: Setup Python 3.9 environment
+        if: ${{ matrix.sdk_name == 'python:container:py39' }}
+        uses: ./.github/actions/setup-environment-action
+        with:
+          python-version: '3.9'
+      - name: Setup Python 3.10 environment
+        if: ${{ matrix.sdk_name == 'python:container:py310' }}
+        uses: ./.github/actions/setup-environment-action
+        with:
+          python-version: '3.10'
+      - name: Setup Python 3.11 environment
+        if: ${{ matrix.sdk_name == 'python:container:py311' }}
+        uses: ./.github/actions/setup-environment-action
+        with:
+          python-version: '3.11'
       - name: run Publish Beam SDK Snapshots script
         uses: ./.github/actions/gradle-command-self-hosted-action
         with:
-          gradle-command: :sdks:go:container:dockerTagPush :sdks:java:container:java8:dockerTagPush :sdks:java:container:java11:dockerTagPush :sdks:java:container:java17:dockerTagPush :sdks:python:container:py38:dockerTagPush :sdks:python:container:py39:dockerTagPush :sdks:python:container:py310:dockerTagPush :sdks:python:container:py311:dockerTagPush
+          gradle-command: :sdks:${{ matrix.sdk_name }}:dockerTagPush
           arguments: |
             -Pjava11Home=$JAVA_HOME_11_X64 \
             -Pjava17Home=$JAVA_HOME_17_X64 \
