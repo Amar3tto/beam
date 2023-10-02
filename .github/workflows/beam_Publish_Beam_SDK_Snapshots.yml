@@ -61,7 +61,8 @@ jobs:
       matrix:
         job_name: ["beam_Publish_Beam_SDK_Snapshots"]
         job_phrase: ["Run Publish Beam SDK Snapshots"]
-        sdk_name: ["go:container", "java:container:java8", "java:container:java11", "java:container:java17", "python:container:py38", "python:container:py39", "python:container:py310", "python:container:py311"]
+#        sdk_name: ["go:container", "java:container:java8", "java:container:java11", "java:container:java17", "python:container:py38", "python:container:py39", "python:container:py310", "python:container:py311"]
+        sdk_name: ["go:container", "java:container:java11", "python:container:py38", "python:container:py39", "python:container:py310", "python:container:py311"]
     steps:
       - uses: actions/checkout@v3
       - name: Setup repository
@@ -108,6 +109,5 @@ jobs:
           gradle-command: :sdks:${{ matrix.sdk_name }}:dockerTagPush
           arguments: |
             -Pjava11Home=$JAVA_HOME_11_X64 \
-            -Pjava17Home=$JAVA_HOME_17_X64 \
             -Pdocker-repository-root=gcr.io/apache-beam-testing/beam-sdk \
             -Pdocker-tag-list=${{ github.sha }},latest
