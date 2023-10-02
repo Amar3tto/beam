@@ -13,13 +13,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-name: Publish Beam SDK Snapshots
+name: Publish Docker Snapshots
 
 on:
   issue_comment:
     types: [created]
   schedule:
-    - cron: '0 */4 * * *'
+    - cron: '0 13 * * *'
   workflow_dispatch:
 
 #Setting explicit permissions for the action to avoid the default permissions which are `write-all` in case of pull_request_target event
@@ -49,20 +49,18 @@ env:
   GRADLE_ENTERPRISE_CACHE_PASSWORD: ${{ secrets.GE_CACHE_PASSWORD }}
 
 jobs:
-  beam_Publish_Beam_SDK_Snapshots:
+  beam_Publish_Docker_Snapshots:
     if: |
       github.event_name == 'workflow_dispatch' ||
       github.event_name == 'schedule' ||
-      github.event.comment.body == 'Run Publish Beam SDK Snapshots'
+      github.event.comment.body == 'Publish Docker Snapshots'
     runs-on: [self-hosted, ubuntu-20.04, main]
     timeout-minutes: 120
     name: ${{ matrix.job_name }} (${{ matrix.job_phrase }})
     strategy:
       matrix:
-        job_name: ["beam_Publish_Beam_SDK_Snapshots"]
-        job_phrase: ["Publish Beam SDK Snapshots"]
-#        sdk_name: ["go:container", "java:container:java8", "java:container:java11", "java:container:java17", "python:container:py38", "python:container:py39", "python:container:py310", "python:container:py311"]
-        sdk_name: ["go:container", "java:container:java11"]
+        job_name: ["beam_Publish_Docker_Snapshots"]
+        job_phrase: ["Publish Docker Snapshots"]
     steps:
       - uses: actions/checkout@v3
       - name: Setup repository
@@ -71,43 +69,17 @@ jobs:
           comment_phrase: ${{ matrix.job_phrase }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
           github_job: ${{ matrix.job_name }} (${{ matrix.job_phrase }})
-      - name: Setup Java 11 environment
-        if: ${{ matrix.sdk_name == 'java:container:java11' }}
-        uses: ./.github/actions/setup-environment-action
-        with:
-          java-version: 11
-      - name: Setup Java 17 environment
-        if: ${{ matrix.sdk_name == 'java:container:java17' }}
-        uses: ./.github/actions/setup-environment-action
-        with:
-          java-version: |
-            17
-            8
-      - name: Setup Python 3.8 environment
-        if: ${{ matrix.sdk_name == 'python:container:py38' }}
-        uses: ./.github/actions/setup-environment-action
-        with:
-          python-version: '3.8'
-      - name: Setup Python 3.9 environment
-        if: ${{ matrix.sdk_name == 'python:container:py39' }}
-        uses: ./.github/actions/setup-environment-action
-        with:
-          python-version: '3.9'
-      - name: Setup Python 3.10 environment
-        if: ${{ matrix.sdk_name == 'python:container:py310' }}
-        uses: ./.github/actions/setup-environment-action
-        with:
-          python-version: '3.10'
-      - name: Setup Python 3.11 environment
-        if: ${{ matrix.sdk_name == 'python:container:py311' }}
-        uses: ./.github/actions/setup-environment-action
-        with:
-          python-version: '3.11'
-      - name: run Publish Beam SDK Snapshots script
+      - name: run Publish Docker Snapshots script for Spark
         uses: ./.github/actions/gradle-command-self-hosted-action
         with:
-          gradle-command: :sdks:${{ matrix.sdk_name }}:dockerTagPush
+          gradle-command: :runners:spark:3:job-server:container:dockerPush
           arguments: |
-            -Pjava11Home=$JAVA_HOME_11_X64 \
-            -Pdocker-repository-root=gcr.io/apache-beam-testing/beam-sdk \
-            -Pdocker-tag-list=${{ github.sha }},latest
+            -Pdocker-repository-root=gcr.io/apache-beam-testing/beam_portability \
+            -Pdocker-tag-list=latest
+      - name: run Publish Docker Snapshots script for Flink
+        uses: ./.github/actions/gradle-command-self-hosted-action
+        with:
+          gradle-command: :runners:flink:1.15:job-server-container:dockerPush
+          arguments: |
+            -Pdocker-repository-root=gcr.io/apache-beam-testing/beam_portability \
+            -Pdocker-tag-list=latest
