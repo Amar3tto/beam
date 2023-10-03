@@ -58,6 +58,7 @@ jobs:
     timeout-minutes: 120
     name: ${{ matrix.job_name }} (${{ matrix.job_phrase }} ${{ matrix.sdk_name }})
     strategy:
+      fail-fast: false
       matrix:
         job_name: ["beam_Publish_Beam_SDK_Snapshots"]
         job_phrase: ["Publish Beam SDK Snapshots"]
