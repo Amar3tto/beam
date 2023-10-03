@@ -21,10 +21,8 @@ name: TypeScript Tests
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '10 2 * * *'
   push:
-    branches: ['master', 'release-*', 'javascript']
+    branches: ['release-*', 'javascript']
     tags: ['v*']
   pull_request:
     branches: ['master', 'release-*', 'javascript']
