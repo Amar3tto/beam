@@ -53,7 +53,7 @@ jobs:
     if: |
       github.event_name == 'workflow_dispatch' ||
       github.event_name == 'schedule' ||
-      github.event.comment.body == 'Publish Beam SDK Snapshots'
+      startsWith(github.event.comment.body, 'Publish Beam SDK Snapshots')
     runs-on: [self-hosted, ubuntu-20.04, main]
     timeout-minutes: 120
     name: ${{ matrix.job_name }} (${{ matrix.job_phrase }} ${{ matrix.sdk_name }})
@@ -61,31 +61,47 @@ jobs:
       matrix:
         job_name: ["beam_Publish_Beam_SDK_Snapshots"]
         job_phrase: ["Publish Beam SDK Snapshots"]
-#        sdk_name: ["go:container", "java:container:java8", "java:container:java11", "java:container:java17", "python:container:py38", "python:container:py39", "python:container:py310", "python:container:py311"]
-        sdk_name: ["python:container:py39"]
+        sdk_name: ["Java", "Python", "Go"]
     steps:
       - uses: actions/checkout@v3
       - name: Setup repository
         uses: ./.github/actions/setup-action
         with:
-          comment_phrase: ${{ matrix.job_phrase }}
+          comment_phrase: ${{ matrix.job_phrase }} ${{ matrix.sdk_name }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          github_job: ${{ matrix.job_name }} (${{ matrix.job_phrase }})
+          github_job: ${{ matrix.job_name }} (${{ matrix.job_phrase }} ${{ matrix.sdk_name }})
       - name: Setup Java environment
-        if: ${{ startsWith(matrix.sdk_name, 'java') }}
+        if: ${{ matrix.sdk_name == 'Java' }}
         uses: ./.github/actions/setup-environment-action
         with:
           java-version: 11
       - name: Setup Python environment
-        if: ${{ startsWith(matrix.sdk_name, 'python') }}
+        if: ${{ matrix.sdk_name == 'Python' }}
         uses: ./.github/actions/setup-environment-action
         with:
           python-version: '3.8'
-      - name: run Publish Beam SDK Snapshots script
+      - name: run Publish Beam SDK Snapshots Java script
+        if: ${{ matrix.sdk_name == 'Java' }}
         uses: ./.github/actions/gradle-command-self-hosted-action
         with:
-          gradle-command: :sdks:${{ matrix.sdk_name }}:dockerTagPush
+          gradle-command: :sdks:java:container:java8:dockerTagPush :sdks:java:container:java11:dockerTagPush :sdks:java:container:java17:dockerTagPush
           arguments: |
             -Pjava11Home=$JAVA_HOME_11_X64 \
+            -Pdocker-repository-root=gcr.io/apache-beam-testing/beam-sdk \
+            -Pdocker-tag-list=${{ github.sha }},latest
+      - name: run Publish Beam SDK Snapshots Python script
+        if: ${{ matrix.sdk_name == 'Python' }}
+        uses: ./.github/actions/gradle-command-self-hosted-action
+        with:
+          gradle-command: :sdks:python:container:py38:dockerTagPush :sdks:python:container:py39:dockerTagPush :sdks:python:container:py310:dockerTagPush :sdks:python:container:py311:dockerTagPush
+          arguments: |
+            -Pdocker-repository-root=gcr.io/apache-beam-testing/beam-sdk \
+            -Pdocker-tag-list=${{ github.sha }},latest
+      - name: run Publish Beam SDK Snapshots Go script
+        if: ${{ matrix.sdk_name == 'Go' }}
+        uses: ./.github/actions/gradle-command-self-hosted-action
+        with:
+          gradle-command: :sdks:go:container:dockerTagPush
+          arguments: |
             -Pdocker-repository-root=gcr.io/apache-beam-testing/beam-sdk \
             -Pdocker-tag-list=${{ github.sha }},latest
