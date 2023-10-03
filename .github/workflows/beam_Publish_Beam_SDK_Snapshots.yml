@@ -56,13 +56,13 @@ jobs:
       github.event.comment.body == 'Publish Beam SDK Snapshots'
     runs-on: [self-hosted, ubuntu-20.04, main]
     timeout-minutes: 120
-    name: ${{ matrix.job_name }} (${{ matrix.job_phrase }})
+    name: ${{ matrix.job_name }} (${{ matrix.job_phrase }} ${{ matrix.sdk_name }})
     strategy:
       matrix:
         job_name: ["beam_Publish_Beam_SDK_Snapshots"]
         job_phrase: ["Publish Beam SDK Snapshots"]
-        sdk_name: ["go:container", "java:container:java8", "java:container:java11", "java:container:java17", "python:container:py38", "python:container:py39", "python:container:py310", "python:container:py311"]
-#        sdk_name: ["go:container", "java:container:java11"]
+#        sdk_name: ["go:container", "java:container:java8", "java:container:java11", "java:container:java17", "python:container:py38", "python:container:py39", "python:container:py310", "python:container:py311"]
+        sdk_name: ["java:container:java11"]
     steps:
       - uses: actions/checkout@v3
       - name: Setup repository
@@ -75,7 +75,7 @@ jobs:
         uses: ./.github/actions/setup-environment-action
         with:
           java-version: 11
-          python-version: '3.8'
+#          python-version: '3.8'
       - name: run Publish Beam SDK Snapshots script
         uses: ./.github/actions/gradle-command-self-hosted-action
         with:
