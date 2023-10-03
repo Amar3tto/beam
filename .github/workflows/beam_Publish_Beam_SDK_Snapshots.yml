@@ -62,7 +62,7 @@ jobs:
         job_name: ["beam_Publish_Beam_SDK_Snapshots"]
         job_phrase: ["Publish Beam SDK Snapshots"]
 #        sdk_name: ["go:container", "java:container:java8", "java:container:java11", "java:container:java17", "python:container:py38", "python:container:py39", "python:container:py310", "python:container:py311"]
-        sdk_name: ["java:container:java17"]
+        sdk_name: ["python:container:py39"]
     steps:
       - uses: actions/checkout@v3
       - name: Setup repository
@@ -71,11 +71,16 @@ jobs:
           comment_phrase: ${{ matrix.job_phrase }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
           github_job: ${{ matrix.job_name }} (${{ matrix.job_phrase }})
-      - name: Setup Java 11 environment
+      - name: Setup Java environment
+        if: ${{ startsWith(matrix.sdk_name, 'java') }}
         uses: ./.github/actions/setup-environment-action
         with:
           java-version: 11
-#          python-version: '3.8'
+      - name: Setup Python environment
+        if: ${{ startsWith(matrix.sdk_name, 'python') }}
+        uses: ./.github/actions/setup-environment-action
+        with:
+          python-version: '3.8'
       - name: run Publish Beam SDK Snapshots script
         uses: ./.github/actions/gradle-command-self-hosted-action
         with:
