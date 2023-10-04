@@ -13,9 +13,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-name: Cleanup Dataproc Resources
+name: Community Metrics Prober
 
 on:
+  issue_comment:
+    types: [created]
+  schedule:
+    - cron: '0 */6 * * *'
   workflow_dispatch:
 
 #Setting explicit permissions for the action to avoid the default permissions which are `write-all` in case of pull_request_target event
@@ -36,7 +40,7 @@ permissions:
 
 # This allows a subsequently queued workflow run to interrupt previous runs
 concurrency:
-  group: '${{ github.workflow }} @ ${{ github.event.issue.number || github.sha || github.head_ref || github.ref }}-${{ github.event.schedule || github.event.sender.login }}'
+  group: '${{ github.workflow }} @ ${{ github.event.issue.number || github.sha || github.head_ref || github.ref }}-${{ github.event.schedule || github.event.comment.body || github.event.sender.login }}'
   cancel-in-progress: true
 
 env:
@@ -45,17 +49,18 @@ env:
   GRADLE_ENTERPRISE_CACHE_PASSWORD: ${{ secrets.GE_CACHE_PASSWORD }}
 
 jobs:
-  beam_CleanUpDataprocResources:
+  beam_Prober_CommunityMetrics:
     if: |
       github.event_name == 'workflow_dispatch' ||
-      github.event_name == 'schedule'
+      github.event_name == 'schedule' ||
+      github.event.comment.body == 'Run Community Metrics Prober'
     runs-on: [self-hosted, ubuntu-20.04, main]
     timeout-minutes: 100
-    name: ${{ matrix.job_name }}
+    name: ${{ matrix.job_name }} (${{ matrix.job_phrase }})
     strategy:
       matrix:
-        job_name: ["beam_CleanUpDataprocResources"]
-        job_phrase: ["N/A"]
+        job_name: ["beam_Prober_CommunityMetrics"]
+        job_phrase: ["Run Community Metrics Prober"]
     steps:
       - uses: actions/checkout@v3
       - name: Setup repository
@@ -63,7 +68,10 @@ jobs:
         with:
           comment_phrase: ${{ matrix.job_phrase }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
-          github_job: ${{ matrix.job_name }}
-      - name: Delete leaked resources for all the jobs that generates flink clusters
-        run: |
-          cd ${{ github.workspace }}/.test-infra/dataproc; ./cleanup.sh -xe
+          github_job: ${{ matrix.job_name }} (${{ matrix.job_phrase }})
+      - name: Health check probes for the Community Metrics infrastructure
+        uses: ./.github/actions/gradle-command-self-hosted-action
+        with:
+          gradle-command: :communityMetricsProber
+          arguments: |
+            --rerun-tasks
