@@ -57,7 +57,7 @@ jobs:
       github.event_name == 'schedule' ||
       github.event.comment.body == 'Run Java JMH'
     runs-on: [self-hosted, ubuntu-20.04, main]
-    timeout-minutes: 720
+    timeout-minutes: 900
     name: ${{ matrix.job_name }} (${{ matrix.job_phrase }})
     strategy:
       matrix:
