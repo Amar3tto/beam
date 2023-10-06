@@ -87,6 +87,9 @@ jobs:
       # The env variables are created and populated in the test-arguments-action as "<github.job>_test_arguments_<argument_file_paths_index>"
       - name: get current time
         run: echo "NOW_UTC=$(date '+%m%d%H%M%S' --utc)" >> $GITHUB_ENV
+      - name: Install torch
+        run: |
+          pip install torch
       - name: run Pytorch Vision Classification with Resnet 101
         uses: ./.github/actions/gradle-command-self-hosted-action
         timeout-minutes: 180
