@@ -93,8 +93,7 @@ jobs:
         run: |
           curl -O https://repo.anaconda.com/archive/Anaconda3-2020.11-Linux-x86_64.sh
           bash Anaconda3-2020.11-Linux-x86_64.sh -b -p $HOME/miniconda
-          conda update --all
-          conda install pytorch torchvision -c -y pytorch
+          $HOME/miniconda/bin/conda install pytorch torchvision -c -y pytorch
           pip3 install torch torchvision
       - name: run Pytorch Vision Classification with Resnet 101
         uses: ./.github/actions/gradle-command-self-hosted-action
