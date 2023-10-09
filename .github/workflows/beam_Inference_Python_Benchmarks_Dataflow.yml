@@ -84,14 +84,11 @@ jobs:
             ${{ github.workspace }}/.github/workflows/load-tests-job-configs/beam_Inference_Python_Benchmarks_Dataflow_Pytorch_Language_Modeling_Bert_Base_Uncased.txt
             ${{ github.workspace }}/.github/workflows/load-tests-job-configs/beam_Inference_Python_Benchmarks_Dataflow_Pytorch_Language_Modeling_Bert_Large_Uncased.txt
             ${{ github.workspace }}/.github/workflows/load-tests-job-configs/beam_Inference_Python_Benchmarks_Dataflow_Pytorch_Imagenet_Classification_Resnet_152_Tesla_T4_GPU.txt
+          arguments: |
+            --requirements_file=${{ github.workspace }}/sdks/python/apache_beam/ml/inference/torch_tests_requirements.txt
       # The env variables are created and populated in the test-arguments-action as "<github.job>_test_arguments_<argument_file_paths_index>"
       - name: get current time
         run: echo "NOW_UTC=$(date '+%m%d%H%M%S' --utc)" >> $GITHUB_ENV
-      - name: Install torch
-        run: |
-          pip install --upgrade pip
-          pip install torch
-          pip install torchvision
       - name: run Pytorch Vision Classification with Resnet 101
         uses: ./.github/actions/gradle-command-self-hosted-action
         timeout-minutes: 180
