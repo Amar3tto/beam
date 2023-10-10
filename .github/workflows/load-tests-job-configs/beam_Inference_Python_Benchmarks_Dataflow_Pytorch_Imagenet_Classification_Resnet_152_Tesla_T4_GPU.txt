@@ -33,3 +33,4 @@
 --sdk_container_image=us.gcr.io/apache-beam-testing/python-postcommit-it/tensor_rt:latest
 --input_file=gs://apache-beam-ml/testing/inputs/openimage_50k_benchmark.txt
 --model_state_dict_path=gs://apache-beam-ml/models/torchvision.models.resnet152.pth
+--runner=DataflowRunner

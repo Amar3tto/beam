@@ -31,3 +31,4 @@
 --device=CPU
 --input_file=gs://apache-beam-ml/testing/inputs/openimage_50k_benchmark.txt
 --model_state_dict_path=gs://apache-beam-ml/models/torchvision.models.resnet101.pth
+--runner=DataflowRunner

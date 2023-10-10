@@ -31,3 +31,4 @@
 --input_file=gs://apache-beam-ml/testing/inputs/sentences_50k.txt
 --bert_tokenizer=bert-large-uncased
 --model_state_dict_path=gs://apache-beam-ml/models/huggingface.BertForMaskedLM.bert-large-uncased.pth
+--runner=DataflowRunner
