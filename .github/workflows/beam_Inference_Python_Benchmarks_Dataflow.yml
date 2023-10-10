@@ -84,17 +84,9 @@ jobs:
             ${{ github.workspace }}/.github/workflows/load-tests-job-configs/beam_Inference_Python_Benchmarks_Dataflow_Pytorch_Language_Modeling_Bert_Base_Uncased.txt
             ${{ github.workspace }}/.github/workflows/load-tests-job-configs/beam_Inference_Python_Benchmarks_Dataflow_Pytorch_Language_Modeling_Bert_Large_Uncased.txt
             ${{ github.workspace }}/.github/workflows/load-tests-job-configs/beam_Inference_Python_Benchmarks_Dataflow_Pytorch_Imagenet_Classification_Resnet_152_Tesla_T4_GPU.txt
-          arguments: |
-            --requirements_file=${{ github.workspace }}/sdks/python/apache_beam/ml/inference/torch_tests_requirements.txt
       # The env variables are created and populated in the test-arguments-action as "<github.job>_test_arguments_<argument_file_paths_index>"
       - name: get current time
         run: echo "NOW_UTC=$(date '+%m%d%H%M%S' --utc)" >> $GITHUB_ENV
-      - name: Install torch
-        run: |
-          curl -O https://repo.anaconda.com/archive/Anaconda3-2020.11-Linux-x86_64.sh
-          bash Anaconda3-2020.11-Linux-x86_64.sh -b -p $HOME/miniconda
-          $HOME/miniconda/bin/conda install pytorch torchvision -c pytorch -y
-          pip3 install torch torchvision
       - name: run Pytorch Vision Classification with Resnet 101
         uses: ./.github/actions/gradle-command-self-hosted-action
         timeout-minutes: 180
@@ -104,6 +96,7 @@ jobs:
             -PloadTest.mainClass=apache_beam.testing.benchmarks.inference.pytorch_image_classification_benchmarks \
             -Prunner=DataflowRunner \
             -PpythonVersion=3.8 \
+            -PloadTest.requirementsTxtFile=apache_beam/ml/inference/torch_tests_requirements.txt \
             '-PloadTest.args=${{ env.beam_Inference_Python_Benchmarks_Dataflow_test_arguments_1 }} --job_name=benchmark-tests-pytorch-imagenet-python-101-${{env.NOW_UTC}} --output=gs://temp-storage-for-end-to-end-tests/torch/result_resnet101-${{env.NOW_UTC}}.txt' \
       - name: run Pytorch Imagenet Classification with Resnet 152
         uses: ./.github/actions/gradle-command-self-hosted-action
@@ -114,6 +107,7 @@ jobs:
             -PloadTest.mainClass=apache_beam.testing.benchmarks.inference.pytorch_image_classification_benchmarks \
             -Prunner=DataflowRunner \
             -PpythonVersion=3.8 \
+            -PloadTest.requirementsTxtFile=apache_beam/ml/inference/torch_tests_requirements.txt \            
             '-PloadTest.args=${{ env.beam_Inference_Python_Benchmarks_Dataflow_test_arguments_2 }} --job_name=benchmark-tests-pytorch-imagenet-python-152-${{env.NOW_UTC}} --output=gs://temp-storage-for-end-to-end-tests/torch/result_resnet152-${{env.NOW_UTC}}.txt' \
       - name: run Pytorch Lanugaue Modeling using Hugging face bert-base-uncased model
         uses: ./.github/actions/gradle-command-self-hosted-action
@@ -124,6 +118,7 @@ jobs:
             -PloadTest.mainClass=apache_beam.testing.benchmarks.inference.pytorch_image_classification_benchmarks \
             -Prunner=DataflowRunner \
             -PpythonVersion=3.8 \
+            -PloadTest.requirementsTxtFile=apache_beam/ml/inference/torch_tests_requirements.txt \
             '-PloadTest.args=${{ env.beam_Inference_Python_Benchmarks_Dataflow_test_arguments_3 }} --job_name=benchmark-tests-pytorch-language-modeling-bert-base-uncased-${{env.NOW_UTC}} --output=gs://temp-storage-for-end-to-end-tests/torch/result_bert_base_uncased-${{env.NOW_UTC}}.txt' \
       - name: run Pytorch Langauge Modeling using Hugging Face bert-large-uncased model
         uses: ./.github/actions/gradle-command-self-hosted-action
@@ -134,6 +129,7 @@ jobs:
             -PloadTest.mainClass=apache_beam.testing.benchmarks.inference.pytorch_image_classification_benchmarks \
             -Prunner=DataflowRunner \
             -PpythonVersion=3.8 \
+            -PloadTest.requirementsTxtFile=apache_beam/ml/inference/torch_tests_requirements.txt \
             '-PloadTest.args=${{ env.beam_Inference_Python_Benchmarks_Dataflow_test_arguments_4 }} --job_name=benchmark-tests-pytorch-language-modeling-bert-large-uncased-${{env.NOW_UTC}} --output=gs://temp-storage-for-end-to-end-tests/torch/result_bert_large_uncased-${{env.NOW_UTC}}.txt' \
       - name: run Pytorch Imagenet Classification with Resnet 152 with Tesla T4 GPU
         uses: ./.github/actions/gradle-command-self-hosted-action
@@ -144,4 +140,5 @@ jobs:
             -PloadTest.mainClass=apache_beam.testing.benchmarks.inference.pytorch_image_classification_benchmarks \
             -Prunner=DataflowRunner \
             -PpythonVersion=3.8 \
+            -PloadTest.requirementsTxtFile=apache_beam/ml/inference/torch_tests_requirements.txt \
             '-PloadTest.args=${{ env.beam_Inference_Python_Benchmarks_Dataflow_test_arguments_5 }} --job_name=benchmark-tests-pytorch-imagenet-python-gpu-${{env.NOW_UTC}} --output=gs://temp-storage-for-end-to-end-tests/torch/result_resnet152_gpu-${{env.NOW_UTC}}.txt'
