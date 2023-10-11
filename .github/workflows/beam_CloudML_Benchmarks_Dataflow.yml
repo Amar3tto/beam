@@ -89,4 +89,5 @@ jobs:
           gradle-command: :sdks:python:test-suites:dataflow:tftTests
           arguments: |
             -PpythonVersion=3.9 \
+            -Prunner=DataflowRunner \
             "-Popts='${{ env.beam_CloudML_Benchmarks_Dataflow_test_arguments_1 }}'"
