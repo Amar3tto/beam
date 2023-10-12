@@ -16,8 +16,6 @@
 name: Load Tests GBK Dataflow Batch Go
 
 on:
-  issue_comment:
-    types: [created]
   schedule:
     - cron: '40 23 * * *'
   workflow_dispatch:
@@ -69,32 +67,22 @@ jobs:
           comment_phrase: ${{ matrix.job_phrase }}
           github_token: ${{ secrets.GITHUB_TOKEN }}
           github_job: ${{ matrix.job_name }} (${{ matrix.job_phrase }})
-      - name: Prepare configs
-        id: set_configs
-        shell: bash
-        run: |
-          CURDATE=$(date '+%m%d%H%M%S' --utc)
-          CURCONFIG=$(grep -v "^#.*" ./.github/workflows/load-tests-job-configs/config_GBK_Go_Batch_10b.txt | tr '\n' ' ')
-          CURCONFIG=$(echo "${CURCONFIG/load-tests-go-dataflow-batch-gbk-1-/load-tests-go-dataflow-batch-gbk-1-$CURDATE}")
-          echo "prepared_config_1=$CURCONFIG" >> $GITHUB_OUTPUT
-          CURCONFIG=$(grep -v "^#.*" ./.github/workflows/load-tests-job-configs/config_GBK_Go_Batch_100b.txt | tr '\n' ' ')
-          CURCONFIG=$(echo "${CURCONFIG/load-tests-go-dataflow-batch-gbk-2-/load-tests-go-dataflow-batch-gbk-2-$CURDATE}")
-          echo "prepared_config_2=$CURCONFIG" >> $GITHUB_OUTPUT
-          CURCONFIG=$(grep -v "^#.*" ./.github/workflows/load-tests-job-configs/config_GBK_Go_Batch_100kb.txt | tr '\n' ' ')
-          CURCONFIG=$(echo "${CURCONFIG/load-tests-go-dataflow-batch-gbk-3-/load-tests-go-dataflow-batch-gbk-3-$CURDATE}")
-          echo "prepared_config_3=$CURCONFIG" >> $GITHUB_OUTPUT
-          CURCONFIG=$(grep -v "^#.*" ./.github/workflows/load-tests-job-configs/config_GBK_Go_Batch_Fanout_4.txt | tr '\n' ' ')
-          CURCONFIG=$(echo "${CURCONFIG/load-tests-go-dataflow-batch-gbk-4-/load-tests-go-dataflow-batch-gbk-4-$CURDATE}")
-          echo "prepared_config_4=$CURCONFIG" >> $GITHUB_OUTPUT
-          CURCONFIG=$(grep -v "^#.*" ./.github/workflows/load-tests-job-configs/config_GBK_Go_Batch_Fanout_8.txt | tr '\n' ' ')
-          CURCONFIG=$(echo "${CURCONFIG/load-tests-go-dataflow-batch-gbk-5-/load-tests-go-dataflow-batch-gbk-5-$CURDATE}")
-          echo "prepared_config_5=$CURCONFIG" >> $GITHUB_OUTPUT
-          CURCONFIG=$(grep -v "^#.*" ./.github/workflows/load-tests-job-configs/config_GBK_Go_Batch_Reiteration_10KB.txt | tr '\n' ' ')
-          CURCONFIG=$(echo "${CURCONFIG/load-tests-go-dataflow-batch-gbk-6-/load-tests-go-dataflow-batch-gbk-6-$CURDATE}")
-          echo "prepared_config_6=$CURCONFIG" >> $GITHUB_OUTPUT
-          CURCONFIG=$(grep -v "^#.*" ./.github/workflows/load-tests-job-configs/config_GBK_Go_Batch_Reiteration_2MB.txt | tr '\n' ' ')
-          CURCONFIG=$(echo "${CURCONFIG/load-tests-go-dataflow-batch-gbk-7-/load-tests-go-dataflow-batch-gbk-7-$CURDATE}")
-          echo "prepared_config_7=$CURCONFIG" >> $GITHUB_OUTPUT
+      - name: Prepare test arguments
+        uses: ./.github/actions/test-arguments-action
+        with:
+          test-type: load
+          test-language: go
+          argument-file-paths: |
+            ${{ github.workspace }}/.github/workflows/load-tests-job-configs/beam_LoadTests_Go_GBK_Dataflow_Batch_10b.txt
+            ${{ github.workspace }}/.github/workflows/load-tests-job-configs/beam_LoadTests_Go_GBK_Dataflow_Batch_100b.txt
+            ${{ github.workspace }}/.github/workflows/load-tests-job-configs/beam_LoadTests_Go_GBK_Dataflow_Batch_100kb.txt
+            ${{ github.workspace }}/.github/workflows/load-tests-job-configs/beam_LoadTests_Go_GBK_Dataflow_Batch_Fanout_4.txt
+            ${{ github.workspace }}/.github/workflows/load-tests-job-configs/beam_LoadTests_Go_GBK_Dataflow_Batch_Fanout_8.txt
+            ${{ github.workspace }}/.github/workflows/load-tests-job-configs/beam_LoadTests_Go_GBK_Dataflow_Batch_Reiteration_10KB.txt
+            ${{ github.workspace }}/.github/workflows/load-tests-job-configs/beam_LoadTests_Go_GBK_Dataflow_Batch_Reiteration_2MB.txt
+      - name: get current time
+        run: echo "NOW_UTC=$(date '+%m%d%H%M%S' --utc)" >> $GITHUB_ENV
+      # The env variables are created and populated in the test-arguments-action as "<github.job>_test_arguments_<argument_file_paths_index>"
       - name: run GBK Dataflow Batch Go Load Test 1 (10 b records)
         uses: ./.github/actions/gradle-command-self-hosted-action
         with:
@@ -102,7 +90,7 @@ jobs:
           arguments: |
             -PloadTest.mainClass=group_by_key \
             -Prunner=DataflowRunner \
-            '-PloadTest.args=${{ steps.set_configs.outputs.prepared_config_1 }}' \
+            '-PloadTest.args=${{ steps.set_configs.outputs.prepared_config_1 }} --job_name=load-tests-go-dataflow-batch-gbk-1-${{env.NOW_UTC}}' \
       - name: run GBK Dataflow Batch Go Load Test 2 (100 b records)
         uses: ./.github/actions/gradle-command-self-hosted-action
         with:
@@ -110,7 +98,7 @@ jobs:
           arguments: |
             -PloadTest.mainClass=group_by_key \
             -Prunner=DataflowRunner \
-            '-PloadTest.args=${{ steps.set_configs.outputs.prepared_config_2 }}' \
+            '-PloadTest.args=${{ steps.set_configs.outputs.prepared_config_2 }} --job_name=load-tests-go-dataflow-batch-gbk-2-${{env.NOW_UTC}}' \
       - name: run GBK Dataflow Batch Go Load Test 3 (100 kb records)
         uses: ./.github/actions/gradle-command-self-hosted-action
         with:
@@ -118,7 +106,7 @@ jobs:
           arguments: |
             -PloadTest.mainClass=group_by_key \
             -Prunner=DataflowRunner \
-            '-PloadTest.args=${{ steps.set_configs.outputs.prepared_config_3 }}' \
+            '-PloadTest.args=${{ steps.set_configs.outputs.prepared_config_3 }} --job_name=load-tests-go-dataflow-batch-gbk-3-${{env.NOW_UTC}}' \
       - name: run GBK Dataflow Batch Go Load Test 4 (fanout 4)
         uses: ./.github/actions/gradle-command-self-hosted-action
         with:
@@ -126,7 +114,7 @@ jobs:
           arguments: |
             -PloadTest.mainClass=group_by_key \
             -Prunner=DataflowRunner \
-            '-PloadTest.args=${{ steps.set_configs.outputs.prepared_config_4 }}' \
+            '-PloadTest.args=${{ steps.set_configs.outputs.prepared_config_4 }} --job_name=load-tests-go-dataflow-batch-gbk-4-${{env.NOW_UTC}}' \
       - name: run GBK Dataflow Batch Go Load Test 5 (fanout 8)
         uses: ./.github/actions/gradle-command-self-hosted-action
         with:
@@ -134,7 +122,7 @@ jobs:
           arguments: |
             -PloadTest.mainClass=group_by_key \
             -Prunner=DataflowRunner \
-            '-PloadTest.args=${{ steps.set_configs.outputs.prepared_config_5 }}' \
+            '-PloadTest.args=${{ steps.set_configs.outputs.prepared_config_5 }} --job_name=load-tests-go-dataflow-batch-gbk-5-${{env.NOW_UTC}}' \
       - name: run GBK Dataflow Batch Go Load Test 6 (reiterate 4 times 10 kb)
         uses: ./.github/actions/gradle-command-self-hosted-action
         with:
@@ -142,7 +130,7 @@ jobs:
           arguments: |
             -PloadTest.mainClass=group_by_key \
             -Prunner=DataflowRunner \
-            '-PloadTest.args=${{ steps.set_configs.outputs.prepared_config_6 }}' \
+            '-PloadTest.args=${{ steps.set_configs.outputs.prepared_config_6 }} --job_name=load-tests-go-dataflow-batch-gbk-6-${{env.NOW_UTC}}' \
       - name: run GBK Dataflow Batch Go Load Test 7 (reiterate 4 times 2 mb)
         uses: ./.github/actions/gradle-command-self-hosted-action
         with:
@@ -150,4 +138,4 @@ jobs:
           arguments: |
             -PloadTest.mainClass=group_by_key \
             -Prunner=DataflowRunner \
-            '-PloadTest.args=${{ steps.set_configs.outputs.prepared_config_7 }}'
+            '-PloadTest.args=${{ steps.set_configs.outputs.prepared_config_7 }} --job_name=load-tests-go-dataflow-batch-gbk-7-${{env.NOW_UTC}}'
