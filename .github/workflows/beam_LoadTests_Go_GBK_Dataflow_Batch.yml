@@ -90,7 +90,7 @@ jobs:
           arguments: |
             -PloadTest.mainClass=group_by_key \
             -Prunner=DataflowRunner \
-            '-PloadTest.args=${{ steps.set_configs.outputs.prepared_config_1 }} --job_name=load-tests-go-dataflow-batch-gbk-1-${{env.NOW_UTC}}' \
+            '-PloadTest.args=${{ env.beam_LoadTests_Go_GBK_Dataflow_Batch_test_arguments_1 }} --job_name=load-tests-go-dataflow-batch-gbk-1-${{env.NOW_UTC}}' \
       - name: run GBK Dataflow Batch Go Load Test 2 (100 b records)
         uses: ./.github/actions/gradle-command-self-hosted-action
         with:
@@ -98,7 +98,7 @@ jobs:
           arguments: |
             -PloadTest.mainClass=group_by_key \
             -Prunner=DataflowRunner \
-            '-PloadTest.args=${{ steps.set_configs.outputs.prepared_config_2 }} --job_name=load-tests-go-dataflow-batch-gbk-2-${{env.NOW_UTC}}' \
+            '-PloadTest.args=${{ env.beam_LoadTests_Go_GBK_Dataflow_Batch_test_arguments_2 }} --job_name=load-tests-go-dataflow-batch-gbk-2-${{env.NOW_UTC}}' \
       - name: run GBK Dataflow Batch Go Load Test 3 (100 kb records)
         uses: ./.github/actions/gradle-command-self-hosted-action
         with:
@@ -106,7 +106,7 @@ jobs:
           arguments: |
             -PloadTest.mainClass=group_by_key \
             -Prunner=DataflowRunner \
-            '-PloadTest.args=${{ steps.set_configs.outputs.prepared_config_3 }} --job_name=load-tests-go-dataflow-batch-gbk-3-${{env.NOW_UTC}}' \
+            '-PloadTest.args=${{ env.beam_LoadTests_Go_GBK_Dataflow_Batch_test_arguments_3 }} --job_name=load-tests-go-dataflow-batch-gbk-3-${{env.NOW_UTC}}' \
       - name: run GBK Dataflow Batch Go Load Test 4 (fanout 4)
         uses: ./.github/actions/gradle-command-self-hosted-action
         with:
@@ -114,7 +114,7 @@ jobs:
           arguments: |
             -PloadTest.mainClass=group_by_key \
             -Prunner=DataflowRunner \
-            '-PloadTest.args=${{ steps.set_configs.outputs.prepared_config_4 }} --job_name=load-tests-go-dataflow-batch-gbk-4-${{env.NOW_UTC}}' \
+            '-PloadTest.args=${{ env.beam_LoadTests_Go_GBK_Dataflow_Batch_test_arguments_4 }} --job_name=load-tests-go-dataflow-batch-gbk-4-${{env.NOW_UTC}}' \
       - name: run GBK Dataflow Batch Go Load Test 5 (fanout 8)
         uses: ./.github/actions/gradle-command-self-hosted-action
         with:
@@ -122,7 +122,7 @@ jobs:
           arguments: |
             -PloadTest.mainClass=group_by_key \
             -Prunner=DataflowRunner \
-            '-PloadTest.args=${{ steps.set_configs.outputs.prepared_config_5 }} --job_name=load-tests-go-dataflow-batch-gbk-5-${{env.NOW_UTC}}' \
+            '-PloadTest.args=${{ env.beam_LoadTests_Go_GBK_Dataflow_Batch_test_arguments_5 }} --job_name=load-tests-go-dataflow-batch-gbk-5-${{env.NOW_UTC}}' \
       - name: run GBK Dataflow Batch Go Load Test 6 (reiterate 4 times 10 kb)
         uses: ./.github/actions/gradle-command-self-hosted-action
         with:
@@ -130,7 +130,7 @@ jobs:
           arguments: |
             -PloadTest.mainClass=group_by_key \
             -Prunner=DataflowRunner \
-            '-PloadTest.args=${{ steps.set_configs.outputs.prepared_config_6 }} --job_name=load-tests-go-dataflow-batch-gbk-6-${{env.NOW_UTC}}' \
+            '-PloadTest.args=${{ env.beam_LoadTests_Go_GBK_Dataflow_Batch_test_arguments_6 }} --job_name=load-tests-go-dataflow-batch-gbk-6-${{env.NOW_UTC}}' \
       - name: run GBK Dataflow Batch Go Load Test 7 (reiterate 4 times 2 mb)
         uses: ./.github/actions/gradle-command-self-hosted-action
         with:
@@ -138,4 +138,4 @@ jobs:
           arguments: |
             -PloadTest.mainClass=group_by_key \
             -Prunner=DataflowRunner \
-            '-PloadTest.args=${{ steps.set_configs.outputs.prepared_config_7 }} --job_name=load-tests-go-dataflow-batch-gbk-7-${{env.NOW_UTC}}'
+            '-PloadTest.args=${{ env.beam_LoadTests_Go_GBK_Dataflow_Batch_test_arguments_7 }} --job_name=load-tests-go-dataflow-batch-gbk-7-${{env.NOW_UTC}}'
