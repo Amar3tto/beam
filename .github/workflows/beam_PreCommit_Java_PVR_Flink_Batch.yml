@@ -90,5 +90,6 @@ jobs:
       - name: Upload test report
         uses: actions/upload-artifact@v3
         with:
+          large_files: true
           name: java-code-coverage-report
           path: "**/build/test-results/**/*.xml"
