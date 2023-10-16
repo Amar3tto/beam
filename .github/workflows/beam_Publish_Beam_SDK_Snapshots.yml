@@ -45,7 +45,7 @@ env:
   GRADLE_ENTERPRISE_ACCESS_KEY: ${{ secrets.GE_ACCESS_TOKEN }}
   GRADLE_ENTERPRISE_CACHE_USERNAME: ${{ secrets.GE_CACHE_USERNAME }}
   GRADLE_ENTERPRISE_CACHE_PASSWORD: ${{ secrets.GE_CACHE_PASSWORD }}
-  docker_registry: us-central1-docker.pkg.dev
+  docker_registry: gcr.io
 
 jobs:
   beam_Publish_Beam_SDK_Snapshots:
@@ -96,4 +96,4 @@ jobs:
           arguments: |
             -Pjava11Home=$JAVA_HOME_11_X64 \
             -Pdocker-repository-root=gcr.io/apache-beam-testing/beam-sdk \
-            -Pdocker-tag-list=${{ github.sha }},latest
+            -Pdocker-tag-list=${{ github.sha }},latest \
