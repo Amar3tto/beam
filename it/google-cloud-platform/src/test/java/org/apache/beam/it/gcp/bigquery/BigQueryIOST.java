@@ -296,6 +296,11 @@ public final class BigQueryIOST extends IOStressTestBase {
                 .withSchema(schema)
                 .withCustomGcsTempLocation(ValueProvider.StaticValueProvider.of(tempLocation)));
 
+    String experiments =
+        configuration.writeMethod.equals(STORAGE_API_AT_LEAST_ONCE_METHOD)
+            ? GcpOptions.STREAMING_ENGINE_EXPERIMENT + ",streaming_mode_at_least_once"
+            : GcpOptions.STREAMING_ENGINE_EXPERIMENT;
+
     PipelineLauncher.LaunchConfig options =
         PipelineLauncher.LaunchConfig.builder("write-bigquery")
             .setSdk(PipelineLauncher.Sdk.JAVA)
@@ -307,7 +312,7 @@ public final class BigQueryIOST extends IOStressTestBase {
                     .toString())
             .addParameter("numWorkers", String.valueOf(configuration.numWorkers))
             .addParameter("maxNumWorkers", String.valueOf(configuration.maxNumWorkers))
-            .addParameter("experiments", GcpOptions.STREAMING_ENGINE_EXPERIMENT)
+            .addParameter("experiments", experiments)
             .build();
 
     PipelineLauncher.LaunchInfo launchInfo = pipelineLauncher.launch(project, region, options);
@@ -326,6 +331,7 @@ public final class BigQueryIOST extends IOStressTestBase {
             launchInfo.jobId(),
             getBeamMetricsName(PipelineMetricsType.COUNTER, READ_ELEMENT_METRIC_NAME));
     Long rowCount = resourceManager.getRowCount(tableName);
+    System.err.println("ROW COUNT = " + rowCount);
 
     // Depending on writing method there might be duplicates on different sides (read or write).
     if (configuration.writeMethod.equals(STORAGE_API_AT_LEAST_ONCE_METHOD)) {
