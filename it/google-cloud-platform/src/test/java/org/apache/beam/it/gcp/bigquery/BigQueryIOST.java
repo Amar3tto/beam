@@ -329,7 +329,7 @@ public final class BigQueryIOST extends IOStressTestBase {
             project,
             region,
             launchInfo.jobId(),
-            getBeamMetricsName(PipelineMetricsType.COUNTER, READ_ELEMENT_METRIC_NAME));
+            getBeamMetricsName(PipelineMetricsType.COUNTER, "recordsAppended"));
     Long rowCount = resourceManager.getRowCount(tableName);
     System.err.println("ROW COUNT = " + rowCount);
 
