@@ -179,19 +179,19 @@ public final class BigQueryIOST extends IOStressTestBase {
     }
   }
 
-//  @Test
-//  public void testAvroStorageAPIWrite() throws IOException {
-//    configuration.writeFormat = WriteFormat.AVRO.name();
-//    configuration.writeMethod = STORAGE_WRITE_API_METHOD;
-//    runTest();
-//  }
-//
-//  @Test
-//  public void testJsonStorageAPIWrite() throws IOException {
-//    configuration.writeFormat = WriteFormat.JSON.name();
-//    configuration.writeMethod = STORAGE_WRITE_API_METHOD;
-//    runTest();
-//  }
+  @Test
+  public void testAvroStorageAPIWrite() throws IOException {
+    configuration.writeFormat = WriteFormat.AVRO.name();
+    configuration.writeMethod = STORAGE_WRITE_API_METHOD;
+    runTest();
+  }
+
+  @Test
+  public void testJsonStorageAPIWrite() throws IOException {
+    configuration.writeFormat = WriteFormat.JSON.name();
+    configuration.writeMethod = STORAGE_WRITE_API_METHOD;
+    runTest();
+  }
 
   @Test
   public void testAvroStorageAPIAtLeastOnce() throws IOException {
