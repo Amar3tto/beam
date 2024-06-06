@@ -48,6 +48,7 @@ import org.apache.beam.sdk.extensions.gcp.options.GcpOptions;
 import org.apache.beam.sdk.io.Read;
 import org.apache.beam.sdk.io.gcp.bigquery.AvroWriteRequest;
 import org.apache.beam.sdk.io.gcp.bigquery.BigQueryIO;
+import org.apache.beam.sdk.io.gcp.bigquery.BigQueryOptions;
 import org.apache.beam.sdk.io.synthetic.SyntheticSourceOptions;
 import org.apache.beam.sdk.io.synthetic.SyntheticUnboundedSource;
 import org.apache.beam.sdk.options.StreamingOptions;
@@ -268,6 +269,7 @@ public final class BigQueryIOST extends IOStressTestBase {
   private void generateDataAndWrite(BigQueryIO.Write<byte[]> writeIO) throws IOException {
     BigQueryIO.Write.Method method = BigQueryIO.Write.Method.valueOf(configuration.writeMethod);
     writePipeline.getOptions().as(StreamingOptions.class).setStreaming(true);
+    writePipeline.getOptions().as(BigQueryOptions.class).setNumStorageWriteApiStreamAppendClients(3);
 
     // Each element from PeriodicImpulse will fan out to this many elements:
     int startMultiplier =
