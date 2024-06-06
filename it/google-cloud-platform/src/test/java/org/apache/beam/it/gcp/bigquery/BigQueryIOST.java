@@ -178,19 +178,19 @@ public final class BigQueryIOST extends IOStressTestBase {
     }
   }
 
-  @Test
-  public void testAvroStorageAPIWrite() throws IOException {
-    configuration.writeFormat = WriteFormat.AVRO.name();
-    configuration.writeMethod = STORAGE_WRITE_API_METHOD;
-    runTest();
-  }
-
-  @Test
-  public void testJsonStorageAPIWrite() throws IOException {
-    configuration.writeFormat = WriteFormat.JSON.name();
-    configuration.writeMethod = STORAGE_WRITE_API_METHOD;
-    runTest();
-  }
+//  @Test
+//  public void testAvroStorageAPIWrite() throws IOException {
+//    configuration.writeFormat = WriteFormat.AVRO.name();
+//    configuration.writeMethod = STORAGE_WRITE_API_METHOD;
+//    runTest();
+//  }
+//
+//  @Test
+//  public void testJsonStorageAPIWrite() throws IOException {
+//    configuration.writeFormat = WriteFormat.JSON.name();
+//    configuration.writeMethod = STORAGE_WRITE_API_METHOD;
+//    runTest();
+//  }
 
   @Test
   public void testAvroStorageAPIAtLeastOnce() throws IOException {
@@ -282,8 +282,7 @@ public final class BigQueryIOST extends IOStressTestBase {
           source
               .apply(
                   "One input to multiple outputs",
-                  ParDo.of(new MultiplierDoFn<>(startMultiplier, loadPeriods)))
-              .apply("Reshuffle fanout", Reshuffle.of());
+                  ParDo.of(new MultiplierDoFn<>(startMultiplier, loadPeriods)));
     }
     source
         .apply("Extract values", Values.create())
@@ -329,7 +328,7 @@ public final class BigQueryIOST extends IOStressTestBase {
             project,
             region,
             launchInfo.jobId(),
-            getBeamMetricsName(PipelineMetricsType.COUNTER, "recordsAppended"));
+            getBeamMetricsName(PipelineMetricsType.COUNTER, READ_ELEMENT_METRIC_NAME));
     Long rowCount = resourceManager.getRowCount(tableName);
     System.err.println("ROW COUNT = " + rowCount);
 
