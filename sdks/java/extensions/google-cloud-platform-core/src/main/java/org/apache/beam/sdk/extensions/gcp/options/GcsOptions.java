@@ -18,6 +18,7 @@
 package org.apache.beam.sdk.extensions.gcp.options;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.google.cloud.hadoop.gcsio.GoogleCloudStorageReadOptions;
 import com.google.cloud.hadoop.util.AsyncWriteChannelOptions;
 import java.util.concurrent.ExecutorService;
 import org.apache.beam.sdk.extensions.gcp.storage.GcsPathValidator;
@@ -43,6 +44,15 @@ public interface GcsOptions extends ApplicationNameOptions, GcpOptions, Pipeline
   GcsUtil getGcsUtil();
 
   void setGcsUtil(GcsUtil value);
+
+  @JsonIgnore
+  @Description(
+      "The GoogleCloudStorageReadOptions instance that should be used to read from Google Cloud Storage.")
+  @Default.InstanceFactory(GcsUtil.GcsReadOptionsFactory.class)
+  @Hidden
+  GoogleCloudStorageReadOptions getGoogleCloudStorageReadOptions();
+
+  void setGoogleCloudStorageReadOptions(GoogleCloudStorageReadOptions value);
 
   /**
    * The ExecutorService instance to use to create threads, can be overridden to specify an
@@ -141,6 +151,36 @@ public interface GcsOptions extends ApplicationNameOptions, GcpOptions, Pipeline
   Integer getGcsRewriteDataOpBatchLimit();
 
   void setGcsRewriteDataOpBatchLimit(@Nullable Integer timeoutMs);
+
+  /** If true, reports number of bytes written to each gcs bucket. */
+  @Description("Whether to report number of bytes written per GCS bucket.")
+  @Default.Boolean(false)
+  Boolean getEnableBucketWriteMetricCounter();
+
+  void setEnableBucketWriteMetricCounter(Boolean enableBucketWriteMetricCounter);
+
+  /** If true, reports number of bytes read from each gcs bucket. */
+  @Description("Whether to report number of bytes read per GCS bucket.")
+  @Default.Boolean(false)
+  Boolean getEnableBucketReadMetricCounter();
+
+  void setEnableBucketReadMetricCounter(Boolean enableBucketReadMetricCounter);
+
+  @Description(
+      "Prefix for the metric that counts the number of bytes read per GCS bucket. The resulting"
+          + " metric name will be formatted according to this template: <prefix>_<bucket_name>.")
+  @Default.String("GCS_read_bytes_counter")
+  String getGcsReadCounterPrefix();
+
+  void setGcsReadCounterPrefix(String gcsReadCounterPrefix);
+
+  @Description(
+      "Prefix for the metric that counts the number of bytes written per GCS bucket. The resulting"
+          + " metric name will be formatted according to this template: <prefix>_<bucket_name>.")
+  @Default.String("GCS_write_bytes_counter")
+  String getGcsWriteCounterPrefix();
+
+  void setGcsWriteCounterPrefix(String gcsReadCounterPrefix);
 
   /**
    * Returns the default {@link ExecutorService} to use within the Apache Beam SDK. The {@link

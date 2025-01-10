@@ -18,13 +18,14 @@
 package org.apache.beam.sdk.io.iceberg;
 
 import com.google.auto.value.AutoValue;
-import java.io.IOException;
+import java.util.Map;
 import org.apache.beam.sdk.schemas.AutoValueSchema;
 import org.apache.beam.sdk.schemas.annotations.DefaultSchema;
 import org.apache.beam.sdk.schemas.annotations.SchemaIgnore;
-import org.apache.iceberg.ManifestFile;
-import org.apache.iceberg.ManifestFiles;
+import org.apache.iceberg.DataFile;
+import org.apache.iceberg.PartitionSpec;
 import org.apache.iceberg.catalog.TableIdentifier;
+import org.apache.iceberg.catalog.TableIdentifierParser;
 import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
 
 @AutoValue
@@ -32,31 +33,26 @@ import org.checkerframework.checker.nullness.qual.MonotonicNonNull;
 abstract class FileWriteResult {
 
   private transient @MonotonicNonNull TableIdentifier cachedTableIdentifier;
-  private transient @MonotonicNonNull ManifestFile cachedManifestFile;
+  private transient @MonotonicNonNull DataFile cachedDataFile;
 
   abstract String getTableIdentifierString();
 
-  @SuppressWarnings("mutable")
-  abstract byte[] getManifestFileBytes();
+  abstract SerializableDataFile getSerializableDataFile();
 
   @SchemaIgnore
   public TableIdentifier getTableIdentifier() {
     if (cachedTableIdentifier == null) {
-      cachedTableIdentifier = TableIdentifier.parse(getTableIdentifierString());
+      cachedTableIdentifier = IcebergUtils.parseTableIdentifier(getTableIdentifierString());
     }
     return cachedTableIdentifier;
   }
 
   @SchemaIgnore
-  public ManifestFile getManifestFile() {
-    if (cachedManifestFile == null) {
-      try {
-        cachedManifestFile = ManifestFiles.decode(getManifestFileBytes());
-      } catch (IOException exc) {
-        throw new RuntimeException("Error decoding manifest file bytes");
-      }
+  public DataFile getDataFile(Map<Integer, PartitionSpec> specs) {
+    if (cachedDataFile == null) {
+      cachedDataFile = getSerializableDataFile().createDataFile(specs);
     }
-    return cachedManifestFile;
+    return cachedDataFile;
   }
 
   public static Builder builder() {
@@ -68,16 +64,11 @@ abstract class FileWriteResult {
 
     abstract Builder setTableIdentifierString(String tableIdString);
 
-    abstract Builder setManifestFileBytes(byte[] manifestFileBytes);
+    abstract Builder setSerializableDataFile(SerializableDataFile dataFile);
 
     @SchemaIgnore
     public Builder setTableIdentifier(TableIdentifier tableId) {
-      return setTableIdentifierString(tableId.toString());
-    }
-
-    @SchemaIgnore
-    public Builder setManifestFile(ManifestFile manifestFile) throws IOException {
-      return setManifestFileBytes(ManifestFiles.encode(manifestFile));
+      return setTableIdentifierString(TableIdentifierParser.toJson(tableId));
     }
 
     public abstract FileWriteResult build();

@@ -96,6 +96,7 @@ public class BigQueryIOTranslationTest {
     WRITE_TRANSFORM_SCHEMA_MAPPING.put("getWriteDisposition", "write_disposition");
     WRITE_TRANSFORM_SCHEMA_MAPPING.put("getSchemaUpdateOptions", "schema_update_options");
     WRITE_TRANSFORM_SCHEMA_MAPPING.put("getTableDescription", "table_description");
+    WRITE_TRANSFORM_SCHEMA_MAPPING.put("getBigLakeConfiguration", "biglake_configuration");
     WRITE_TRANSFORM_SCHEMA_MAPPING.put("getValidate", "validate");
     WRITE_TRANSFORM_SCHEMA_MAPPING.put("getBigQueryServices", "bigquery_services");
     WRITE_TRANSFORM_SCHEMA_MAPPING.put("getMaxFilesPerBundle", "max_files_per_bundle");
@@ -105,6 +106,9 @@ public class BigQueryIOTranslationTest {
         "getNumStorageWriteApiStreams", "num_storage_write_api_streams");
     WRITE_TRANSFORM_SCHEMA_MAPPING.put(
         "getPropagateSuccessfulStorageApiWrites", "propagate_successful_storage_api_writes");
+    WRITE_TRANSFORM_SCHEMA_MAPPING.put(
+        "getPropagateSuccessfulStorageApiWritesPredicate",
+        "propagate_successful_storage_api_writes_predicate");
     WRITE_TRANSFORM_SCHEMA_MAPPING.put("getMaxFilesPerPartition", "max_files_per_partition");
     WRITE_TRANSFORM_SCHEMA_MAPPING.put("getMaxBytesPerPartition", "max_bytes_per_partition");
     WRITE_TRANSFORM_SCHEMA_MAPPING.put("getTriggeringFrequency", "triggering_frequency");

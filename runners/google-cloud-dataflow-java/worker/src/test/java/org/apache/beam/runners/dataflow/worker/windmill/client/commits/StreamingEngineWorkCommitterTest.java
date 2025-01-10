@@ -21,6 +21,7 @@ import static com.google.common.truth.Truth.assertThat;
 import static org.apache.beam.runners.dataflow.worker.windmill.Windmill.CommitStatus.OK;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
+import static org.mockito.Mockito.mock;
 
 import com.google.api.services.dataflow.model.MapTask;
 import java.io.IOException;
@@ -49,24 +50,27 @@ import org.apache.beam.runners.dataflow.worker.windmill.Windmill.WorkItemCommitR
 import org.apache.beam.runners.dataflow.worker.windmill.client.CloseableStream;
 import org.apache.beam.runners.dataflow.worker.windmill.client.WindmillStream.CommitWorkStream;
 import org.apache.beam.runners.dataflow.worker.windmill.client.WindmillStreamPool;
+import org.apache.beam.runners.dataflow.worker.windmill.client.getdata.FakeGetDataClient;
+import org.apache.beam.runners.dataflow.worker.windmill.work.refresh.HeartbeatSender;
 import org.apache.beam.vendor.grpc.v1p60p1.com.google.protobuf.ByteString;
+import org.apache.beam.vendor.grpc.v1p60p1.io.grpc.testing.GrpcCleanupRule;
 import org.apache.beam.vendor.guava.v32_1_2_jre.com.google.common.collect.ImmutableMap;
 import org.joda.time.Duration;
 import org.joda.time.Instant;
-import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.ErrorCollector;
+import org.junit.rules.Timeout;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
-import org.mockito.Mockito;
 
 @RunWith(JUnit4.class)
 public class StreamingEngineWorkCommitterTest {
-
+  @Rule public final GrpcCleanupRule grpcCleanup = new GrpcCleanupRule();
   @Rule public ErrorCollector errorCollector = new ErrorCollector();
-  private StreamingEngineWorkCommitter workCommitter;
+  @Rule public transient Timeout globalTimeout = Timeout.seconds(600);
+  private WorkCommitter workCommitter;
   private FakeWindmillServer fakeWindmillServer;
   private Supplier<CloseableStream<CommitWorkStream>> commitWorkStreamFactory;
 
@@ -81,10 +85,11 @@ public class StreamingEngineWorkCommitterTest {
         Watermarks.builder().setInputDataWatermark(Instant.EPOCH).build(),
         Work.createProcessingContext(
             "computationId",
-            (a, b) -> Windmill.KeyedGetDataResponse.getDefaultInstance(),
+            new FakeGetDataClient(),
             ignored -> {
               throw new UnsupportedOperationException();
-            }),
+            },
+            mock(HeartbeatSender.class)),
         Instant::now,
         Collections.emptyList());
   }
@@ -93,7 +98,7 @@ public class StreamingEngineWorkCommitterTest {
     return new ComputationState(
         computationId,
         new MapTask().setSystemName("system").setStageName("stage"),
-        Mockito.mock(BoundedQueueExecutor.class),
+        mock(BoundedQueueExecutor.class),
         ImmutableMap.of(),
         null);
   }
@@ -110,21 +115,19 @@ public class StreamingEngineWorkCommitterTest {
   public void setUp() throws IOException {
     fakeWindmillServer =
         new FakeWindmillServer(
-            errorCollector, ignored -> Optional.of(Mockito.mock(ComputationState.class)));
+            errorCollector, ignored -> Optional.of(mock(ComputationState.class)));
     commitWorkStreamFactory =
         WindmillStreamPool.create(
                 1, Duration.standardMinutes(1), fakeWindmillServer::commitWorkStream)
             ::getCloseableStream;
   }
 
-  @After
-  public void cleanUp() {
-    workCommitter.stop();
-  }
-
-  private StreamingEngineWorkCommitter createWorkCommitter(
-      Consumer<CompleteCommit> onCommitComplete) {
-    return StreamingEngineWorkCommitter.create(commitWorkStreamFactory, 1, onCommitComplete);
+  private WorkCommitter createWorkCommitter(Consumer<CompleteCommit> onCommitComplete) {
+    return StreamingEngineWorkCommitter.builder()
+        .setCommitByteSemaphore(Commits.maxCommitByteSemaphore())
+        .setCommitWorkStreamFactory(commitWorkStreamFactory)
+        .setOnCommitComplete(onCommitComplete)
+        .build();
   }
 
   @Test
@@ -156,6 +159,8 @@ public class StreamingEngineWorkCommitterTest {
       assertThat(request).isEqualTo(commit.request());
       assertThat(completeCommits).contains(asCompleteCommit(commit, Windmill.CommitStatus.OK));
     }
+
+    workCommitter.stop();
   }
 
   @Test
@@ -196,6 +201,8 @@ public class StreamingEngineWorkCommitterTest {
             .containsEntry(commit.work().getWorkItem().getWorkToken(), commit.request());
       }
     }
+
+    workCommitter.stop();
   }
 
   @Test
@@ -248,6 +255,8 @@ public class StreamingEngineWorkCommitterTest {
           .contains(asCompleteCommit(commit, expectedCommitStatus.get(commit.work().id())));
     }
     assertThat(completeCommits.size()).isEqualTo(commits.size());
+
+    workCommitter.stop();
   }
 
   @Test
@@ -256,6 +265,10 @@ public class StreamingEngineWorkCommitterTest {
     Supplier<CommitWorkStream> fakeCommitWorkStream =
         () ->
             new CommitWorkStream() {
+
+              @Override
+              public void start() {}
+
               @Override
               public RequestBatcher batcher() {
                 return new RequestBatcher() {
@@ -273,7 +286,7 @@ public class StreamingEngineWorkCommitterTest {
               }
 
               @Override
-              public void close() {}
+              public void halfClose() {}
 
               @Override
               public boolean awaitTermination(int time, TimeUnit unit) {
@@ -284,6 +297,14 @@ public class StreamingEngineWorkCommitterTest {
               public Instant startTime() {
                 return Instant.now();
               }
+
+              @Override
+              public String backendWorkerToken() {
+                return "";
+              }
+
+              @Override
+              public void shutdown() {}
             };
 
     commitWorkStreamFactory =
@@ -328,7 +349,13 @@ public class StreamingEngineWorkCommitterTest {
             ::getCloseableStream;
     Set<CompleteCommit> completeCommits = Collections.newSetFromMap(new ConcurrentHashMap<>());
     workCommitter =
-        StreamingEngineWorkCommitter.create(commitWorkStreamFactory, 5, completeCommits::add);
+        StreamingEngineWorkCommitter.builder()
+            .setCommitByteSemaphore(Commits.maxCommitByteSemaphore())
+            .setCommitWorkStreamFactory(commitWorkStreamFactory)
+            .setNumCommitSenders(5)
+            .setOnCommitComplete(completeCommits::add)
+            .build();
+
     List<Commit> commits = new ArrayList<>();
     for (int i = 1; i <= 500; i++) {
       Work work = createMockWork(i);
@@ -353,5 +380,7 @@ public class StreamingEngineWorkCommitterTest {
       assertThat(request).isEqualTo(commit.request());
       assertThat(completeCommits).contains(asCompleteCommit(commit, Windmill.CommitStatus.OK));
     }
+
+    workCommitter.stop();
   }
 }

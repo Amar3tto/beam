@@ -26,6 +26,7 @@ https://github.com/apache/beam/blob/master/sdks/python/OWNERS
 
 # pytype: skip-file
 
+import traceback
 from typing import BinaryIO  # pylint: disable=unused-import
 
 from apache_beam.io.filesystem import BeamIOError
@@ -159,9 +160,7 @@ class GCSFileSystem(FileSystem):
       self,
       path,
       mime_type='application/octet-stream',
-      compression_type=CompressionTypes.AUTO):
-    # type: (...) -> BinaryIO
-
+      compression_type=CompressionTypes.AUTO) -> BinaryIO:
     """Returns a write channel for the given file path.
 
     Args:
@@ -177,9 +176,7 @@ class GCSFileSystem(FileSystem):
       self,
       path,
       mime_type='application/octet-stream',
-      compression_type=CompressionTypes.AUTO):
-    # type: (...) -> BinaryIO
-
+      compression_type=CompressionTypes.AUTO) -> BinaryIO:
     """Returns a read channel for the given file path.
 
     Args:
@@ -369,3 +366,14 @@ class GCSFileSystem(FileSystem):
 
     if exceptions:
       raise BeamIOError("Delete operation failed", exceptions)
+
+  def report_lineage(self, path, lineage):
+    try:
+      components = gcsio.parse_gcs_path(path, object_optional=True)
+    except ValueError:
+      # report lineage is fail-safe
+      traceback.print_exc()
+      return
+    if components and not components[-1]:
+      components = components[:-1]
+    lineage.add('gcs', *components, last_segment_sep='/')

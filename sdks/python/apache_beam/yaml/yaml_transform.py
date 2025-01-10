@@ -16,28 +16,31 @@
 #
 
 import collections
+import datetime
 import functools
 import json
 import logging
 import os
 import pprint
 import re
-import uuid
 from typing import Any
 from typing import Iterable
 from typing import List
 from typing import Mapping
 from typing import Set
 
+import jinja2
 import yaml
-from yaml.loader import SafeLoader
 
 import apache_beam as beam
+from apache_beam.io.filesystems import FileSystems
 from apache_beam.options.pipeline_options import GoogleCloudOptions
 from apache_beam.transforms.fully_qualified_named_transform import FullyQualifiedNamedTransform
 from apache_beam.yaml import yaml_provider
 from apache_beam.yaml.yaml_combine import normalize_combine
 from apache_beam.yaml.yaml_mapping import normalize_mapping
+from apache_beam.yaml.yaml_mapping import validate_generic_expressions
+from apache_beam.yaml.yaml_utils import SafeLineLoader
 
 __all__ = ["YamlTransform"]
 
@@ -124,58 +127,6 @@ def empty_if_explicitly_empty(io):
     return {}
   else:
     return io
-
-
-class SafeLineLoader(SafeLoader):
-  """A yaml loader that attaches line information to mappings and strings."""
-  class TaggedString(str):
-    """A string class to which we can attach metadata.
-
-    This is primarily used to trace a string's origin back to its place in a
-    yaml file.
-    """
-    def __reduce__(self):
-      # Pickle as an ordinary string.
-      return str, (str(self), )
-
-  def construct_scalar(self, node):
-    value = super().construct_scalar(node)
-    if isinstance(value, str):
-      value = SafeLineLoader.TaggedString(value)
-      value._line_ = node.start_mark.line + 1
-    return value
-
-  def construct_mapping(self, node, deep=False):
-    mapping = super().construct_mapping(node, deep=deep)
-    mapping['__line__'] = node.start_mark.line + 1
-    mapping['__uuid__'] = self.create_uuid()
-    return mapping
-
-  @classmethod
-  def create_uuid(cls):
-    return str(uuid.uuid4())
-
-  @classmethod
-  def strip_metadata(cls, spec, tagged_str=True):
-    if isinstance(spec, Mapping):
-      return {
-          key: cls.strip_metadata(value, tagged_str)
-          for key,
-          value in spec.items() if key not in ('__line__', '__uuid__')
-      }
-    elif isinstance(spec, Iterable) and not isinstance(spec, (str, bytes)):
-      return [cls.strip_metadata(value, tagged_str) for value in spec]
-    elif isinstance(spec, SafeLineLoader.TaggedString) and tagged_str:
-      return str(spec)
-    else:
-      return spec
-
-  @staticmethod
-  def get_line(obj):
-    if isinstance(obj, dict):
-      return obj.get('__line__', 'unknown')
-    else:
-      return getattr(obj, '_line_', 'unknown')
 
 
 class LightweightScope(object):
@@ -384,6 +335,12 @@ class Scope(LightweightScope):
           f'Missing inputs for transform at {identify_object(spec)}')
 
     try:
+      if spec['type'].endswith('-generic'):
+        # Centralize the validation rather than require every implementation
+        # to do it.
+        validate_generic_expressions(
+            spec['type'].rsplit('-', 1)[0], config, input_pcolls)
+
       # pylint: disable=undefined-loop-variable
       ptransform = provider.create_transform(
           spec['type'], config, self.create_ptransform)
@@ -483,7 +440,7 @@ def expand_leaf_transform(spec, scope):
       outputs = inputs | scope.unique_name(spec, ptransform) >> ptransform
   except Exception as exn:
     raise ValueError(
-        f"Error apply transform {identify_object(spec)}: {exn}") from exn
+        f"Error applying transform {identify_object(spec)}: {exn}") from exn
   if isinstance(outputs, dict):
     # TODO: Handle (or at least reject) nested case.
     return outputs
@@ -566,8 +523,8 @@ def chain_as_composite(spec):
         pass
       else:
         raise ValueError(
-            f'Transform {identify_object(transform)} is part of a chain, '
-            'must have implicit inputs and outputs.')
+            f'Transform {identify_object(transform)} is part of a chain. '
+            'Cannot define explicit inputs on chain pipeline')
     if ix == 0:
       if is_explicitly_empty(transform.get('input', None)):
         pass
@@ -872,7 +829,14 @@ def ensure_errors_consumed(spec):
           consumed.add(scope.get_transform_id_and_output_name(input))
     for error_pcoll, t in to_handle.items():
       if error_pcoll not in consumed:
-        raise ValueError(f'Unconsumed error output for {identify_object(t)}.')
+        config = t.get('config', t)
+        transform_name = t.get('name', t.get('type'))
+        error_output_name = config['error_handling']['output']
+        raise ValueError(
+            f'Unconsumed error output for {identify_object(t)}. '
+            f'The output named {transform_name}.{error_output_name} '
+            'must be used as an input to some other transform. '
+            'See https://beam.apache.org/documentation/sdks/yaml-errors')
   return spec
 
 
@@ -938,6 +902,21 @@ def preprocess(spec, verbose=False, known_transforms=None):
     else:
       return spec
 
+  def validate_transform_references(spec):
+    name = spec.get('name', '')
+    transform_type = spec.get('type')
+    inputs = spec.get('input').get('input', [])
+
+    if not is_empty(inputs):
+      input_values = [inputs] if isinstance(inputs, str) else inputs
+      for input_value in input_values:
+        if input_value in (name, transform_type):
+          raise ValueError(
+              f"Circular reference detected: Transform {name} "
+              f"references itself as input in {identify_object(spec)}")
+
+    return spec
+
   for phase in [
       ensure_transforms_have_types,
       normalize_mapping,
@@ -948,6 +927,7 @@ def preprocess(spec, verbose=False, known_transforms=None):
       preprocess_chain,
       tag_explicit_inputs,
       normalize_inputs_outputs,
+      validate_transform_references,
       preprocess_flattened_inputs,
       ensure_errors_consumed,
       preprocess_windowing,
@@ -960,6 +940,22 @@ def preprocess(spec, verbose=False, known_transforms=None):
       print('=' * 20, phase, '=' * 20)
       pprint.pprint(spec)
   return spec
+
+
+class _BeamFileIOLoader(jinja2.BaseLoader):
+  def get_source(self, environment, path):
+    with FileSystems.open(path) as fin:
+      source = fin.read().decode()
+    return source, path, lambda: True
+
+
+def expand_jinja(
+    jinja_template: str, jinja_variables: Mapping[str, Any]) -> str:
+  return (  # keep formatting
+      jinja2.Environment(
+          undefined=jinja2.StrictUndefined, loader=_BeamFileIOLoader())
+      .from_string(jinja_template)
+      .render(datetime=datetime, **jinja_variables))
 
 
 class YamlTransform(beam.PTransform):
@@ -1037,10 +1033,6 @@ def expand_pipeline(
   # Calling expand directly to avoid outer layer of nesting.
   return YamlTransform(
       pipeline_as_composite(pipeline_spec['pipeline']),
-      {
-          **yaml_provider.parse_providers(pipeline_spec.get('providers', [])),
-          **{
-              key: yaml_provider.as_provider_list(key, value)
-              for (key, value) in (providers or {}).items()
-          }
-      }).expand(beam.pvalue.PBegin(pipeline))
+      yaml_provider.merge_providers(
+          yaml_provider.parse_providers(pipeline_spec.get('providers', [])),
+          providers or {})).expand(beam.pvalue.PBegin(pipeline))

@@ -31,21 +31,38 @@ Run the following in 'sdks/python' directory to run these tests manually:
 import logging
 import unittest
 import uuid
+import zlib
 
 import mock
 import pytest
+from parameterized import parameterized
+from parameterized import parameterized_class
 
+from apache_beam import Create
+from apache_beam.io.filesystem import CompressionTypes
 from apache_beam.io.filesystems import FileSystems
+from apache_beam.io.textio import ReadAllFromText
 from apache_beam.options.pipeline_options import GoogleCloudOptions
 from apache_beam.testing.test_pipeline import TestPipeline
+from apache_beam.testing.util import assert_that
+from apache_beam.testing.util import equal_to
+from apache_beam.transforms.combiners import Count
 
 try:
   from apache_beam.io.gcp import gcsio
 except ImportError:
   gcsio = None  # type: ignore
 
+try:
+  from google.api_core.exceptions import NotFound
+except ImportError:
+  NotFound = None
+
 
 @unittest.skipIf(gcsio is None, 'GCP dependencies are not installed')
+@parameterized_class(
+    ('no_gcsio_throttling_counter', 'enable_gcsio_blob_generation'),
+    [(False, False), (False, True), (True, False), (True, True)])
 class GcsIOIntegrationTest(unittest.TestCase):
 
   INPUT_FILE = 'gs://dataflow-samples/shakespeare/kinglear.txt'
@@ -62,7 +79,6 @@ class GcsIOIntegrationTest(unittest.TestCase):
     self.gcs_tempdir = (
         self.test_pipeline.get_option('temp_location') + '/gcs_it-' +
         str(uuid.uuid4()))
-    self.gcsio = gcsio.GcsIO()
 
   def tearDown(self):
     FileSystems.delete([self.gcs_tempdir + '/'])
@@ -87,14 +103,47 @@ class GcsIOIntegrationTest(unittest.TestCase):
 
   @pytest.mark.it_postcommit
   def test_copy(self):
+    self.gcsio = gcsio.GcsIO(
+        pipeline_options={
+            "no_gcsio_throttling_counter": self.no_gcsio_throttling_counter,
+            "enable_gcsio_blob_generation": self.enable_gcsio_blob_generation
+        })
     src = self.INPUT_FILE
     dest = self.gcs_tempdir + '/test_copy'
 
     self.gcsio.copy(src, dest)
     self._verify_copy(src, dest)
 
+    unknown_src = self.test_pipeline.get_option('temp_location') + \
+        '/gcs_it-' + str(uuid.uuid4())
+    with self.assertRaises(NotFound):
+      self.gcsio.copy(unknown_src, dest)
+
+  @pytest.mark.it_postcommit
+  def test_copy_and_delete(self):
+    self.gcsio = gcsio.GcsIO(
+        pipeline_options={
+            "no_gcsio_throttling_counter": self.no_gcsio_throttling_counter,
+            "enable_gcsio_blob_generation": self.enable_gcsio_blob_generation
+        })
+    src = self.INPUT_FILE
+    dest = self.gcs_tempdir + '/test_copy'
+
+    self.gcsio.copy(src, dest)
+    self._verify_copy(src, dest)
+
+    self.gcsio.delete(dest)
+
+    # no exception if we delete an nonexistent file.
+    self.gcsio.delete(dest)
+
   @pytest.mark.it_postcommit
   def test_batch_copy_and_delete(self):
+    self.gcsio = gcsio.GcsIO(
+        pipeline_options={
+            "no_gcsio_throttling_counter": self.no_gcsio_throttling_counter,
+            "enable_gcsio_blob_generation": self.enable_gcsio_blob_generation
+        })
     num_copies = 10
     srcs = [self.INPUT_FILE] * num_copies
     dests = [
@@ -145,7 +194,9 @@ class GcsIOIntegrationTest(unittest.TestCase):
 
   @pytest.mark.it_postcommit
   @mock.patch('apache_beam.io.gcp.gcsio.default_gcs_bucket_name')
+  @unittest.skipIf(NotFound is None, 'GCP dependencies are not installed')
   def test_create_default_bucket(self, mock_default_gcs_bucket_name):
+    self.gcsio = gcsio.GcsIO()
     google_cloud_options = self.test_pipeline.options.view_as(
         GoogleCloudOptions)
     # overwrite kms option here, because get_or_create_default_gcs_bucket()
@@ -168,7 +219,12 @@ class GcsIOIntegrationTest(unittest.TestCase):
     # remove the existing bucket with the same name as the default bucket
     existing_bucket = self.gcsio.get_bucket(overridden_bucket_name)
     if existing_bucket:
-      existing_bucket.delete()
+      try:
+        existing_bucket.delete()
+      except NotFound:
+        # Bucket existence check from get_bucket may be inaccurate due to gcs
+        # cache or delay
+        pass
 
     bucket = gcsio.get_or_create_default_gcs_bucket(google_cloud_options)
     self.assertIsNotNone(bucket)
@@ -180,6 +236,69 @@ class GcsIOIntegrationTest(unittest.TestCase):
     bucket.delete()
 
     self.assertIsNone(self.gcsio.get_bucket(overridden_bucket_name))
+
+
+class GcsIOReadGzipTest(unittest.TestCase):
+  gcs_path_prefix = "gs://apache-beam-samples/textio/"
+  gzip_test_files = [
+      "textio-test-data.content-type-gzip-content-encoding-gzip.1k.txt.gz",
+      "textio-test-data.content-type-gzip-content-encoding-none.1k.txt.gz",
+      "textio-test-data.content-type-none-content-encoding-gzip.1k.txt.gz",
+      "textio-test-data.content-type-none-content-encoding-none.1k.txt.gz",
+      "textio-test-data.content-type-text-content-encoding-gzip.1k.txt.gz",
+      "textio-test-data.content-type-text-content-encoding-none.1k.txt.gz",
+      "textio-test-data.default.1k.txt",
+      "textio-test-data.default.1k.txt.gz",
+      "textio-test-data.gzip-local.1k.txt.gz",
+  ]
+
+  @parameterized.expand([
+      (gzip_test_files[0], CompressionTypes.UNCOMPRESSED, NotImplementedError),
+      (gzip_test_files[0], CompressionTypes.GZIP, NotImplementedError),
+      (gzip_test_files[0], CompressionTypes.AUTO, NotImplementedError),
+      (gzip_test_files[1], CompressionTypes.UNCOMPRESSED, UnicodeDecodeError),
+      (gzip_test_files[1], CompressionTypes.GZIP, None),
+      (gzip_test_files[1], CompressionTypes.AUTO, None),
+      (gzip_test_files[2], CompressionTypes.UNCOMPRESSED, UnicodeDecodeError),
+      (gzip_test_files[2], CompressionTypes.GZIP, None),
+      (gzip_test_files[2], CompressionTypes.AUTO, None),
+      (gzip_test_files[3], CompressionTypes.UNCOMPRESSED, UnicodeDecodeError),
+      (gzip_test_files[3], CompressionTypes.GZIP, None),
+      (gzip_test_files[3], CompressionTypes.AUTO, None),
+      (gzip_test_files[4], CompressionTypes.UNCOMPRESSED, UnicodeDecodeError),
+      (gzip_test_files[4], CompressionTypes.GZIP, None),
+      (gzip_test_files[4], CompressionTypes.AUTO, None),
+      (gzip_test_files[5], CompressionTypes.UNCOMPRESSED, UnicodeDecodeError),
+      (gzip_test_files[5], CompressionTypes.GZIP, None),
+      (gzip_test_files[5], CompressionTypes.AUTO, None),
+      (gzip_test_files[6], CompressionTypes.UNCOMPRESSED, None),
+      (gzip_test_files[6], CompressionTypes.GZIP, zlib.error),
+      (gzip_test_files[6], CompressionTypes.AUTO, None),
+      (gzip_test_files[7], CompressionTypes.UNCOMPRESSED, UnicodeDecodeError),
+      (gzip_test_files[7], CompressionTypes.GZIP, None),
+      (gzip_test_files[7], CompressionTypes.AUTO, None),
+      (gzip_test_files[8], CompressionTypes.UNCOMPRESSED, UnicodeDecodeError),
+      (gzip_test_files[8], CompressionTypes.GZIP, None),
+      (gzip_test_files[8], CompressionTypes.AUTO, None),
+  ])
+  @unittest.skipIf(NotFound is None, 'GCP dependencies are not installed')
+  def test_read_gzip_file(self, file_name, compression_type, exception):
+    p = TestPipeline(runner="Direct", is_integration_test=True)
+    r = (
+        p
+        | Create([f"{GcsIOReadGzipTest.gcs_path_prefix}{file_name}"])
+        | "Read File from GCS" >>
+        ReadAllFromText(compression_type=compression_type)
+        | Count.Globally())
+    assert_that(r, equal_to([1000]))
+
+    if exception is None:
+      result = p.run()
+      result.wait_until_finish()
+    else:
+      with self.assertRaises(exception):
+        result = p.run()
+        result.wait_until_finish()
 
 
 if __name__ == '__main__':

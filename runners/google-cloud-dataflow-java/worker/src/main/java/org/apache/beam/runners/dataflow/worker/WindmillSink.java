@@ -44,6 +44,8 @@ import org.apache.beam.sdk.values.ValueWithRecordId.ValueWithRecordIdCoder;
 import org.apache.beam.vendor.grpc.v1p60p1.com.google.protobuf.ByteString;
 import org.apache.beam.vendor.guava.v32_1_2_jre.com.google.common.collect.ImmutableMap;
 import org.checkerframework.checker.nullness.qual.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @SuppressWarnings({
   "rawtypes", // TODO(https://github.com/apache/beam/issues/20447)
@@ -54,6 +56,7 @@ class WindmillSink<T> extends Sink<WindowedValue<T>> {
   private final Coder<T> valueCoder;
   private final Coder<Collection<? extends BoundedWindow>> windowsCoder;
   private StreamingModeExecutionContext context;
+  private static final Logger LOG = LoggerFactory.getLogger(WindmillSink.class);
 
   WindmillSink(
       String destinationName,
@@ -171,6 +174,32 @@ class WindmillSink<T> extends Sink<WindowedValue<T>> {
       } else {
         key = context.getSerializedKey();
         value = encode(valueCoder, data.getValue());
+      }
+      if (key.size() > context.getMaxOutputKeyBytes()) {
+        if (context.throwExceptionsForLargeOutput()) {
+          throw new OutputTooLargeException("Key too large: " + key.size());
+        } else {
+          LOG.error(
+              "Trying to output too large key with size "
+                  + key.size()
+                  + ". Limit is "
+                  + context.getMaxOutputKeyBytes()
+                  + ". See https://cloud.google.com/dataflow/docs/guides/common-errors#key-commit-too-large-exception."
+                  + " Running with --experiments=throw_exceptions_on_large_output will instead throw an OutputTooLargeException which may be caught in user code.");
+        }
+      }
+      if (value.size() > context.getMaxOutputValueBytes()) {
+        if (context.throwExceptionsForLargeOutput()) {
+          throw new OutputTooLargeException("Value too large: " + value.size());
+        } else {
+          LOG.error(
+              "Trying to output too large value with size "
+                  + value.size()
+                  + ". Limit is "
+                  + context.getMaxOutputValueBytes()
+                  + ". See https://cloud.google.com/dataflow/docs/guides/common-errors#key-commit-too-large-exception."
+                  + " Running with --experiments=throw_exceptions_on_large_output will instead throw an OutputTooLargeException which may be caught in user code.");
+        }
       }
 
       Windmill.KeyedMessageBundle.Builder keyedOutput = productionMap.get(key);

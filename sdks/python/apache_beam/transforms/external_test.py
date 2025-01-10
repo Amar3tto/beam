@@ -52,6 +52,7 @@ from apache_beam.typehints import typehints
 from apache_beam.typehints.native_type_compatibility import convert_to_beam_type
 from apache_beam.utils import proto_utils
 from apache_beam.utils.subprocess_server import JavaJarServer
+from apache_beam.utils.subprocess_server import SubprocessServer
 
 # Protect against environments where apitools library is not available.
 # pylint: disable=wrong-import-order, wrong-import-position
@@ -377,7 +378,7 @@ Caused by: java.lang.IllegalArgumentException: Received unknown SQL Dialect 'X'.
 \tat org.apache.beam.sdk.extensions.sql.expansion.ExternalSqlTransformRegistrar$Builder.buildExternal(ExternalSqlTransformRegistrar.java:73)
 \tat org.apache.beam.sdk.extensions.sql.expansion.ExternalSqlTransformRegistrar$Builder.buildExternal(ExternalSqlTransformRegistrar.java:63)
 \tat org.apache.beam.sdk.expansion.service.ExpansionService$TransformProviderForBuilder.getTransform(ExpansionService.java:303)
-	... 12 more
+\t... 12 more
     '''.strip()
 
     core_msg = 'java.lang.RuntimeException: ACTUAL \n MULTILINE \n ERROR'
@@ -718,6 +719,9 @@ class JavaClassLookupPayloadBuilderTest(unittest.TestCase):
 
 
 class JavaJarExpansionServiceTest(unittest.TestCase):
+  def setUp(self):
+    SubprocessServer._cache._live_owners = set()
+
   def test_classpath(self):
     with tempfile.TemporaryDirectory() as temp_dir:
       try:

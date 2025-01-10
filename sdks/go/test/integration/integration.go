@@ -104,6 +104,9 @@ var directFilters = []string{
 	"TestSetState",
 	"TestSetStateClear",
 	"TestTimers.*", // no timer support for the go direct runner.
+
+	// no support for BundleFinalizer
+	"TestParDoBundleFinalizer.*",
 }
 
 var portableFilters = []string{
@@ -134,6 +137,9 @@ var portableFilters = []string{
 
 	// The portable runner does not uniquify timers. (data elements re-fired)
 	"TestTimers.*",
+
+	// no support for BundleFinalizer
+	"TestParDoBundleFinalizer.*",
 }
 
 var prismFilters = []string{
@@ -183,9 +189,16 @@ var flinkFilters = []string{
 	"TestTestStreamByteSliceSequence",
 	"TestTestStreamTwoUserTypeSequences",
 	"TestTestStreamInt16Sequence",
+	"TestTestStreamSimple",
+	"TestTestStreamSimple_InfinityDefault",
+	"TestTestStreamToGBK",
+	"TestTestStreamTimersEventTime",
 
 	"TestTimers_EventTime_Unbounded", // (failure when comparing on side inputs (NPE on window lookup))
 	"TestTimers_ProcessingTime.*",    // Flink doesn't support processing time timers.
+
+	// no support for BundleFinalizer
+	"TestParDoBundleFinalizer.*",
 }
 
 var samzaFilters = []string{
@@ -227,6 +240,9 @@ var samzaFilters = []string{
 
 	// Samza does not support state.
 	"TestTimers.*",
+
+	// no support for BundleFinalizer
+	"TestParDoBundleFinalizer.*",
 }
 
 var sparkFilters = []string{
@@ -259,7 +275,11 @@ var sparkFilters = []string{
 	"TestSetStateClear",
 	"TestSetState",
 
-	"TestTimers_EventTime_Unbounded", // Side inputs in executable stage not supported.
+	"TestTimers_EventTime_Unbounded",     // Side inputs in executable stage not supported.
+	"TestTimers_ProcessingTime_Infinity", // Spark doesn't support test stream.
+
+	// no support for BundleFinalizer
+	"TestParDoBundleFinalizer.*",
 }
 
 var dataflowFilters = []string{

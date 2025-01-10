@@ -32,6 +32,7 @@ import org.apache.iceberg.DataFiles;
 import org.apache.iceberg.FileFormat;
 import org.apache.iceberg.PartitionSpec;
 import org.apache.iceberg.Schema;
+import org.apache.iceberg.StructLike;
 import org.apache.iceberg.Table;
 import org.apache.iceberg.catalog.Catalog;
 import org.apache.iceberg.catalog.Namespace;
@@ -44,6 +45,7 @@ import org.apache.iceberg.hadoop.HadoopInputFile;
 import org.apache.iceberg.io.FileAppender;
 import org.apache.iceberg.orc.ORC;
 import org.apache.iceberg.parquet.Parquet;
+import org.checkerframework.checker.nullness.qual.Nullable;
 import org.junit.Assert;
 import org.junit.rules.ExternalResource;
 import org.junit.rules.TemporaryFolder;
@@ -107,6 +109,16 @@ public class TestDataWarehouse extends ExternalResource {
 
   public DataFile writeRecords(String filename, Schema schema, List<Record> records)
       throws IOException {
+    return writeRecords(filename, schema, PartitionSpec.unpartitioned(), null, records);
+  }
+
+  public DataFile writeRecords(
+      String filename,
+      Schema schema,
+      PartitionSpec spec,
+      StructLike partition,
+      List<Record> records)
+      throws IOException {
     Path path = new Path(location, filename);
     FileFormat format = FileFormat.fromFileName(filename);
 
@@ -133,14 +145,29 @@ public class TestDataWarehouse extends ExternalResource {
     }
     appender.addAll(records);
     appender.close();
-    return DataFiles.builder(PartitionSpec.unpartitioned())
+
+    return DataFiles.builder(spec)
         .withInputFile(HadoopInputFile.fromPath(path, hadoopConf))
         .withMetrics(appender.metrics())
+        .withPartition(partition)
         .build();
   }
 
   public Table createTable(TableIdentifier tableId, Schema schema) {
+    return createTable(tableId, schema, null);
+  }
+
+  public Table createTable(
+      TableIdentifier tableId, Schema schema, @Nullable PartitionSpec partitionSpec) {
     someTableHasBeenCreated = true;
-    return catalog.createTable(tableId, schema);
+    return catalog.createTable(tableId, schema, partitionSpec);
+  }
+
+  public Catalog.TableBuilder buildTable(TableIdentifier tableId, Schema schema) {
+    return catalog.buildTable(tableId, schema);
+  }
+
+  public Table loadTable(TableIdentifier tableId) {
+    return catalog.loadTable(tableId);
   }
 }

@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"sort"
 	"sync/atomic"
 	"time"
@@ -34,7 +35,6 @@ import (
 	"github.com/apache/beam/sdks/v2/go/pkg/beam/runners/prism/internal/urns"
 	"github.com/apache/beam/sdks/v2/go/pkg/beam/runners/prism/internal/worker"
 	"golang.org/x/exp/maps"
-	"golang.org/x/exp/slog"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/proto"
 )
@@ -53,13 +53,24 @@ func RunPipeline(j *jobservices.Job) {
 	envs := j.Pipeline.GetComponents().GetEnvironments()
 	wks := map[string]*worker.W{}
 	for envID := range envs {
-		wk, err := makeWorker(envID, j)
-		if err != nil {
-			j.Failed(err)
+		wk := j.MakeWorker(envID)
+		wks[envID] = wk
+		if err := runEnvironment(j.RootCtx, j, envID, wk); err != nil {
+			j.Failed(fmt.Errorf("failed to start environment %v for job %v: %w", envID, j, err))
 			return
 		}
-		wks[envID] = wk
+		// Check for connection succeeding after we've created the environment successfully.
+		timeout := 1 * time.Minute
+		time.AfterFunc(timeout, func() {
+			if wk.Connected() || wk.Stopped() {
+				return
+			}
+			err := fmt.Errorf("prism %v didn't get control connection to %v after %v", wk, wk.Endpoint(), timeout)
+			j.Failed(err)
+			j.CancelFn(err)
+		})
 	}
+
 	// When this function exits, we cancel the context to clear
 	// any related job resources.
 	defer func() {
@@ -84,33 +95,6 @@ func RunPipeline(j *jobservices.Job) {
 
 	j.SendMsg("terminating " + j.String())
 	j.Done()
-}
-
-// makeWorker creates a worker for that environment.
-func makeWorker(env string, j *jobservices.Job) (*worker.W, error) {
-	wk := worker.New(j.String()+"_"+env, env)
-
-	wk.EnvPb = j.Pipeline.GetComponents().GetEnvironments()[env]
-	wk.PipelineOptions = j.PipelineOptions()
-	wk.JobKey = j.JobKey()
-	wk.ArtifactEndpoint = j.ArtifactEndpoint()
-
-	go wk.Serve()
-
-	if err := runEnvironment(j.RootCtx, j, env, wk); err != nil {
-		return nil, fmt.Errorf("failed to start environment %v for job %v: %w", env, j, err)
-	}
-	// Check for connection succeeding after we've created the environment successfully.
-	timeout := 1 * time.Minute
-	time.AfterFunc(timeout, func() {
-		if wk.Connected() || wk.Stopped() {
-			return
-		}
-		err := fmt.Errorf("prism %v didn't get control connection to %v after %v", wk, wk.Endpoint(), timeout)
-		j.Failed(err)
-		j.CancelFn(err)
-	})
-	return wk, nil
 }
 
 type transformExecuter interface {
@@ -187,18 +171,19 @@ func executePipeline(ctx context.Context, wks map[string]*worker.W, j *jobservic
 
 			col := comps.GetPcollections()[onlyOut]
 			ed := collectionPullDecoder(col.GetCoderId(), coders, comps)
-			wDec, wEnc := getWindowValueCoders(comps, col, coders)
+			winCoder, wDec, wEnc := getWindowValueCoders(comps, col, coders)
 
 			var kd func(io.Reader) []byte
 			if kcid, ok := extractKVCoderID(col.GetCoderId(), coders); ok {
 				kd = collectionPullDecoder(kcid, coders, comps)
 			}
 			stage.OutputsToCoders[onlyOut] = engine.PColInfo{
-				GlobalID: onlyOut,
-				WDec:     wDec,
-				WEnc:     wEnc,
-				EDec:     ed,
-				KeyDec:   kd,
+				GlobalID:    onlyOut,
+				WindowCoder: winCoder,
+				WDec:        wDec,
+				WEnc:        wEnc,
+				EDec:        ed,
+				KeyDec:      kd,
 			}
 
 			// There's either 0, 1 or many inputs, but they should be all the same
@@ -206,12 +191,13 @@ func executePipeline(ctx context.Context, wks map[string]*worker.W, j *jobservic
 			for _, global := range t.GetInputs() {
 				col := comps.GetPcollections()[global]
 				ed := collectionPullDecoder(col.GetCoderId(), coders, comps)
-				wDec, wEnc := getWindowValueCoders(comps, col, coders)
+				winCoder, wDec, wEnc := getWindowValueCoders(comps, col, coders)
 				stage.inputInfo = engine.PColInfo{
-					GlobalID: global,
-					WDec:     wDec,
-					WEnc:     wEnc,
-					EDec:     ed,
+					GlobalID:    global,
+					WindowCoder: winCoder,
+					WDec:        wDec,
+					WEnc:        wEnc,
+					EDec:        ed,
 				}
 				break
 			}
@@ -222,21 +208,25 @@ func executePipeline(ctx context.Context, wks map[string]*worker.W, j *jobservic
 				for _, global := range t.GetInputs() {
 					col := comps.GetPcollections()[global]
 					ed := collectionPullDecoder(col.GetCoderId(), coders, comps)
-					wDec, wEnc := getWindowValueCoders(comps, col, coders)
+					winCoder, wDec, wEnc := getWindowValueCoders(comps, col, coders)
 
 					var kd func(io.Reader) []byte
 					if kcid, ok := extractKVCoderID(col.GetCoderId(), coders); ok {
 						kd = collectionPullDecoder(kcid, coders, comps)
 					}
 					stage.inputInfo = engine.PColInfo{
-						GlobalID: global,
-						WDec:     wDec,
-						WEnc:     wEnc,
-						EDec:     ed,
-						KeyDec:   kd,
+						GlobalID:    global,
+						WindowCoder: winCoder,
+						WDec:        wDec,
+						WEnc:        wEnc,
+						EDec:        ed,
+						KeyDec:      kd,
 					}
 				}
-				em.StageAggregates(stage.ID)
+				ws := windowingStrategy(comps, tid)
+				em.StageAggregates(stage.ID, engine.WinStrat{
+					AllowedLateness: time.Duration(ws.GetAllowedLateness()) * time.Millisecond,
+				})
 			case urns.TransformImpulse:
 				impulses = append(impulses, stage.ID)
 				em.AddStage(stage.ID, nil, []string{getOnlyValue(t.GetOutputs())}, nil)
@@ -279,12 +269,11 @@ func executePipeline(ctx context.Context, wks map[string]*worker.W, j *jobservic
 					case *pipepb.TestStreamPayload_Event_ElementEvent:
 						var elms []engine.TestStreamElement
 						for _, e := range ev.ElementEvent.GetElements() {
-							elms = append(elms, engine.TestStreamElement{Encoded: mayLP(e.GetEncodedElement()), EventTime: mtime.Time(e.GetTimestamp())})
+							elms = append(elms, engine.TestStreamElement{Encoded: mayLP(e.GetEncodedElement()), EventTime: mtime.FromMilliseconds(e.GetTimestamp())})
 						}
 						tsb.AddElementEvent(ev.ElementEvent.GetTag(), elms)
-						ev.ElementEvent.GetTag()
 					case *pipepb.TestStreamPayload_Event_WatermarkEvent:
-						tsb.AddWatermarkEvent(ev.WatermarkEvent.GetTag(), mtime.Time(ev.WatermarkEvent.GetNewWatermark()))
+						tsb.AddWatermarkEvent(ev.WatermarkEvent.GetTag(), mtime.FromMilliseconds(ev.WatermarkEvent.GetNewWatermark()))
 					case *pipepb.TestStreamPayload_Event_ProcessingTimeEvent:
 						if ev.ProcessingTimeEvent.GetAdvanceDuration() == int64(mtime.MaxTimestamp) {
 							// TODO: Determine the SDK common formalism for setting processing time to infinity.
@@ -308,20 +297,22 @@ func executePipeline(ctx context.Context, wks map[string]*worker.W, j *jobservic
 				return fmt.Errorf("prism error building stage %v: \n%w", stage.ID, err)
 			}
 			stages[stage.ID] = stage
-			slog.Debug("pipelineBuild", slog.Group("stage", slog.String("ID", stage.ID), slog.String("transformName", t.GetUniqueName())))
+			j.Logger.Debug("pipelineBuild", slog.Group("stage", slog.String("ID", stage.ID), slog.String("transformName", t.GetUniqueName())))
 			outputs := maps.Keys(stage.OutputsToCoders)
 			sort.Strings(outputs)
 			em.AddStage(stage.ID, []string{stage.primaryInput}, outputs, stage.sideInputs)
 			if stage.stateful {
-				em.StageStateful(stage.ID)
+				em.StageStateful(stage.ID, stage.stateTypeLen)
+			}
+			if stage.onWindowExpiration.TimerFamily != "" {
+				slog.Debug("OnWindowExpiration", slog.String("stage", stage.ID), slog.Any("values", stage.onWindowExpiration))
+				em.StageOnWindowExpiration(stage.ID, stage.onWindowExpiration)
 			}
 			if len(stage.processingTimeTimers) > 0 {
 				em.StageProcessingTimeTimers(stage.ID, stage.processingTimeTimers)
 			}
 		default:
-			err := fmt.Errorf("unknown environment[%v]", t.GetEnvironmentId())
-			slog.Error("Execute", err)
-			return err
+			return fmt.Errorf("unknown environment[%v]", t.GetEnvironmentId())
 		}
 	}
 
@@ -335,17 +326,19 @@ func executePipeline(ctx context.Context, wks map[string]*worker.W, j *jobservic
 	eg.SetLimit(8)
 
 	var instID uint64
-	bundles := em.Bundles(egctx, func() string {
+	bundles := em.Bundles(egctx, j.CancelFn, func() string {
 		return fmt.Sprintf("inst%03d", atomic.AddUint64(&instID, 1))
 	})
 	for {
 		select {
 		case <-ctx.Done():
-			return context.Cause(ctx)
+			err := context.Cause(ctx)
+			j.Logger.Debug("context canceled", slog.Any("cause", err))
+			return err
 		case rb, ok := <-bundles:
 			if !ok {
 				err := eg.Wait()
-				slog.Debug("pipeline done!", slog.String("job", j.String()), slog.Any("error", err))
+				j.Logger.Debug("pipeline done!", slog.String("job", j.String()), slog.Any("error", err), slog.Any("topo", topo))
 				return err
 			}
 			eg.Go(func() error {
@@ -378,7 +371,7 @@ func extractKVCoderID(coldCId string, coders map[string]*pipepb.Coder) (string, 
 	return "", false
 }
 
-func getWindowValueCoders(comps *pipepb.Components, col *pipepb.PCollection, coders map[string]*pipepb.Coder) (exec.WindowDecoder, exec.WindowEncoder) {
+func getWindowValueCoders(comps *pipepb.Components, col *pipepb.PCollection, coders map[string]*pipepb.Coder) (engine.WinCoderType, exec.WindowDecoder, exec.WindowEncoder) {
 	ws := comps.GetWindowingStrategies()[col.GetWindowingStrategyId()]
 	wcID, err := lpUnknownCoders(ws.GetWindowCoderId(), coders, comps.GetCoders())
 	if err != nil {

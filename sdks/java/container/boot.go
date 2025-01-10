@@ -31,12 +31,10 @@ import (
 
 	"github.com/apache/beam/sdks/v2/go/container/tools"
 	"github.com/apache/beam/sdks/v2/go/pkg/beam/artifact"
-	fnpb "github.com/apache/beam/sdks/v2/go/pkg/beam/model/fnexecution_v1"
 	pipepb "github.com/apache/beam/sdks/v2/go/pkg/beam/model/pipeline_v1"
 	"github.com/apache/beam/sdks/v2/go/pkg/beam/util/execx"
 	"github.com/apache/beam/sdks/v2/go/pkg/beam/util/grpcx"
 	"github.com/apache/beam/sdks/v2/go/pkg/beam/util/syscallx"
-	"github.com/golang/protobuf/proto"
 )
 
 var (
@@ -127,30 +125,40 @@ func main() {
 	if err := tools.MakePipelineOptionsFileAndEnvVar(options); err != nil {
 		logger.Fatalf(ctx, "Failed to load pipeline options to worker: %v", err)
 	}
-	os.Setenv("LOGGING_API_SERVICE_DESCRIPTOR", proto.MarshalTextString(&pipepb.ApiServiceDescriptor{Url: *loggingEndpoint}))
-	os.Setenv("CONTROL_API_SERVICE_DESCRIPTOR", proto.MarshalTextString(&pipepb.ApiServiceDescriptor{Url: *controlEndpoint}))
+	os.Setenv("LOGGING_API_SERVICE_DESCRIPTOR", (&pipepb.ApiServiceDescriptor{Url: *loggingEndpoint}).String())
+	os.Setenv("CONTROL_API_SERVICE_DESCRIPTOR", (&pipepb.ApiServiceDescriptor{Url: *controlEndpoint}).String())
 	os.Setenv("RUNNER_CAPABILITIES", strings.Join(info.GetRunnerCapabilities(), " "))
 
 	if info.GetStatusEndpoint() != nil {
-		os.Setenv("STATUS_API_SERVICE_DESCRIPTOR", proto.MarshalTextString(info.GetStatusEndpoint()))
+		os.Setenv("STATUS_API_SERVICE_DESCRIPTOR", info.GetStatusEndpoint().String())
 	}
 
 	const jarsDir = "/opt/apache/beam/jars"
+	const javaHarnessJar = "beam-sdks-java-harness.jar"
 	cp := []string{
 		filepath.Join(jarsDir, "slf4j-api.jar"),
 		filepath.Join(jarsDir, "slf4j-jdk14.jar"),
 		filepath.Join(jarsDir, "jcl-over-slf4j.jar"),
 		filepath.Join(jarsDir, "log4j-over-slf4j.jar"),
 		filepath.Join(jarsDir, "log4j-to-slf4j.jar"),
-		filepath.Join(jarsDir, "beam-sdks-java-harness.jar"),
+		filepath.Join(jarsDir, javaHarnessJar),
 	}
 
 	var hasWorkerExperiment = strings.Contains(options, "use_staged_dataflow_worker_jar")
 	for _, a := range artifacts {
 		name, _ := artifact.MustExtractFilePayload(a)
 		if hasWorkerExperiment {
-			if strings.HasPrefix(name, "beam-runners-google-cloud-dataflow-java-fn-api-worker") {
-				continue
+			if strings.HasPrefix(name, "beam-sdks-java-harness") {
+				// Remove system "beam-sdks-java-harness.jar". User-provided jar will be
+				// added to classpath as a normal user jar further below.
+				for i, cl := range cp {
+					if !strings.HasSuffix(cl, javaHarnessJar) {
+						continue
+					}
+					logger.Printf(ctx, "Using staged java harness: %v", name)
+					cp = append(cp[:i], cp[i+1:]...)
+					break
+				}
 			}
 			if name == "dataflow-worker.jar" {
 				continue
@@ -159,9 +167,19 @@ func main() {
 		cp = append(cp, filepath.Join(dir, filepath.FromSlash(name)))
 	}
 
-	var setRecommendedMaxXmx = strings.Contains(options, "set_recommended_max_xmx")
+	var lim uint64
+	if strings.Contains(options, "set_recommended_max_xmx") {
+		lim = 32 << 30
+	} else {
+		size, err := syscallx.PhysicalMemorySize()
+		if err != nil {
+			size = 0
+		}
+		lim = HeapSizeLimit(size)
+	}
+
 	args := []string{
-		"-Xmx" + strconv.FormatUint(heapSizeLimit(info, setRecommendedMaxXmx), 10),
+		"-Xmx" + strconv.FormatUint(lim, 10),
 		// ParallelGC the most adequate for high throughput and lower CPU utilization
 		// It is the default GC in Java 8, but not on newer versions
 		"-XX:+UseParallelGC",
@@ -248,20 +266,22 @@ func main() {
 }
 
 // heapSizeLimit returns 80% of the runner limit, if provided. If not provided,
-// it returns 70% of the physical memory on the machine. If it cannot determine
-// that value, it returns 1GB. This is an imperfect heuristic. It aims to
-// ensure there is memory for non-heap use and other overhead, while also not
-// underutilizing the machine. if set_recommended_max_xmx experiment is enabled,
-// sets xmx to 32G. Under 32G JVM enables CompressedOops. CompressedOops
-// utilizes memory more efficiently, and has positive impact on GC performance
-// and cache hit rate.
-func heapSizeLimit(info *fnpb.ProvisionInfo, setRecommendedMaxXmx bool) uint64 {
-	if setRecommendedMaxXmx {
-		return 32 << 30
-	} else if size, err := syscallx.PhysicalMemorySize(); err == nil {
-		return (size * 70) / 100
+// it returns max(70% size, size - 32GB). Set size=0 if the physical memory on
+// the machine was undetermined, then it returns 1GB. This is an imperfect
+// heuristic. It aims to ensure there is memory for non-heap use and other
+// overhead, while also not underutilizing the machine.
+// if set_recommended_max_xmx experiment is enabled, sets xmx to 32G. Under 32G
+// JVM enables CompressedOops. CompressedOops utilizes memory more efficiently,
+// and has positive impact on GC performance and cache hit rate.
+func HeapSizeLimit(size uint64) uint64 {
+	if size == 0 {
+		return 1 << 30
 	}
-	return 1 << 30
+	lim := (size * 70) / 100
+	if size-lim < 32<<30 {
+		return lim
+	}
+	return size - (32 << 30)
 }
 
 // Options represents java VM invocation options in a simple,

@@ -290,6 +290,8 @@ def validatesRunnerBatch = tasks.register("validatesRunnerBatch", Test) {
   // TODO(https://github.com/apache/beam/issues/31231
   it.filter {
     excludeTestsMatching 'org.apache.beam.sdk.transforms.RedistributeTest.testRedistributePreservesMetadata'
+    // TODO(https://github.com/apache/beam/issues/32021)
+    excludeTestsMatching 'org.apache.beam.sdk.metrics.MetricsTest$AttemptedMetricTests.testBoundedSourceMetricsInSplit'
   }
 }
 
@@ -329,6 +331,8 @@ def validatesRunnerStreaming = tasks.register("validatesRunnerStreaming", Test) 
       excludeTestsMatching 'org.apache.beam.sdk.transforms.ReshuffleTest.testReshufflePreservesMetadata'
       // TODO(https://github.com/apache/beam/issues/31231
       excludeTestsMatching 'org.apache.beam.sdk.transforms.RedistributeTest.testRedistributePreservesMetadata'
+      // TODO(https://github.com/apache/beam/issues/32021)
+      excludeTestsMatching 'org.apache.beam.sdk.metrics.MetricsTest$AttemptedMetricTests.testBoundedSourceMetricsInSplit'
     }
 
     // TestStream using processing time is not supported in Spark
@@ -341,7 +345,7 @@ def validatesRunnerStreaming = tasks.register("validatesRunnerStreaming", Test) 
     excludeCategories 'org.apache.beam.sdk.testing.UsesSdkHarnessEnvironment'
 
     // State and Timers
-    excludeCategories 'org.apache.beam.sdk.testing.UsesStatefulParDo'
+    excludeCategories 'org.apache.beam.sdk.testing.UsesTestStreamWithMultipleStages'
     excludeCategories 'org.apache.beam.sdk.testing.UsesTimersInParDo'
     excludeCategories 'org.apache.beam.sdk.testing.UsesTimerMap'
     excludeCategories 'org.apache.beam.sdk.testing.UsesLoopingTimer'
@@ -428,6 +432,8 @@ tasks.register("validatesStructuredStreamingRunnerBatch", Test) {
     excludeTestsMatching 'org.apache.beam.sdk.transforms.SplittableDoFnTest.testLifecycleMethodsBounded'
     // https://github.com/apache/beam/issues/29972
     excludeTestsMatching 'org.apache.beam.sdk.transforms.CombineTest$CombineWithContextTests.testHotKeyCombineWithSideInputs'
+    // TODO(https://github.com/apache/beam/issues/32021)
+    excludeTestsMatching 'org.apache.beam.sdk.metrics.MetricsTest$AttemptedMetricTests.testBoundedSourceMetricsInSplit'
   }
 }
 

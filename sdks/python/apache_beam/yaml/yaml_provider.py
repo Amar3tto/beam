@@ -30,10 +30,13 @@ import shutil
 import subprocess
 import sys
 import urllib.parse
+import warnings
 from typing import Any
 from typing import Callable
 from typing import Dict
 from typing import Iterable
+from typing import Iterator
+from typing import List
 from typing import Mapping
 from typing import Optional
 
@@ -45,6 +48,7 @@ import apache_beam as beam
 import apache_beam.dataframe.io
 import apache_beam.io
 import apache_beam.transforms.util
+from apache_beam.io.filesystems import FileSystems
 from apache_beam.portability.api import schema_pb2
 from apache_beam.runners import pipeline_context
 from apache_beam.testing.util import assert_that
@@ -59,6 +63,8 @@ from apache_beam.typehints.schemas import typing_to_runner_api
 from apache_beam.utils import python_callable
 from apache_beam.utils import subprocess_server
 from apache_beam.version import __version__ as beam_version
+from apache_beam.yaml import json_utils
+from apache_beam.yaml.yaml_errors import maybe_with_exception_handling_transform_fn
 
 
 class Provider:
@@ -113,7 +119,7 @@ class Provider:
     (e.g. to encourage fusion).
     """
     # TODO(yaml): This is a very rough heuristic. Consider doing better.
-    # E.g. we could look at the the expected environments themselves.
+    # E.g. we could look at the expected environments themselves.
     # Possibly, we could provide multiple expansions and have the runner itself
     # choose the actual implementation based on fusion (and other) criteria.
     a = self.underlying_provider()
@@ -222,7 +228,10 @@ class ExternalProvider(Provider):
       config['version'] = beam_version
     if type in cls._provider_types:
       try:
-        return cls._provider_types[type](urns, **config)
+        result = cls._provider_types[type](urns, **config)
+        if not hasattr(result, 'to_json'):
+          result.to_json = lambda: spec
+        return result
       except Exception as exn:
         raise ValueError(
             f'Unable to instantiate provider of type {type} '
@@ -341,7 +350,7 @@ def python(urns, packages=()):
 
 @ExternalProvider.register_provider_type('pythonPackage')
 class ExternalPythonProvider(ExternalProvider):
-  def __init__(self, urns, packages):
+  def __init__(self, urns, packages: Iterable[str]):
     super().__init__(urns, PypiExpansionService(packages))
 
   def available(self):
@@ -369,6 +378,61 @@ class ExternalPythonProvider(ExternalProvider):
       return 50
     else:
       return super()._affinity(other)
+
+
+@ExternalProvider.register_provider_type('yaml')
+class YamlProvider(Provider):
+  def __init__(self, transforms: Mapping[str, Mapping[str, Any]]):
+    if not isinstance(transforms, dict):
+      raise ValueError('Transform mapping must be a dict.')
+    self._transforms = transforms
+
+  def available(self):
+    return True
+
+  def cache_artifacts(self):
+    pass
+
+  def provided_transforms(self):
+    return self._transforms.keys()
+
+  def config_schema(self, type):
+    return json_utils.json_schema_to_beam_schema(self.json_config_schema(type))
+
+  def json_config_schema(self, type):
+    return dict(
+        type='object',
+        additionalProperties=False,
+        **self._transforms[type]['config_schema'])
+
+  def description(self, type):
+    return self._transforms[type].get('description')
+
+  def requires_inputs(self, type, args):
+    return self._transforms[type].get(
+        'requires_inputs', super().requires_inputs(type, args))
+
+  def create_transform(
+      self,
+      type: str,
+      args: Mapping[str, Any],
+      yaml_create_transform: Callable[
+          [Mapping[str, Any], Iterable[beam.PCollection]], beam.PTransform]
+  ) -> beam.PTransform:
+    from apache_beam.yaml.yaml_transform import SafeLineLoader, YamlTransform
+    spec = self._transforms[type]
+    try:
+      import jsonschema
+      jsonschema.validate(args, self.json_config_schema(type))
+    except ImportError:
+      warnings.warn(
+          'Please install jsonschema '
+          f'for better provider validation of "{type}"')
+    body = spec['body']
+    if not isinstance(body, str):
+      body = yaml.safe_dump(SafeLineLoader.strip_metadata(body))
+    from apache_beam.yaml.yaml_transform import expand_jinja
+    return YamlTransform(expand_jinja(body, args))
 
 
 # This is needed because type inference can't handle *args, **kwargs forwarding.
@@ -814,8 +878,10 @@ class YamlProviders:
       return beam.WindowInto(window_fn)
 
   @staticmethod
+  @beam.ptransform_fn
+  @maybe_with_exception_handling_transform_fn
   def log_for_testing(
-      level: Optional[str] = 'INFO', prefix: Optional[str] = ''):
+      pcoll, *, level: Optional[str] = 'INFO', prefix: Optional[str] = ''):
     """Logs each element of its input PCollection.
 
     The output of this transform is a copy of its input for ease of use in
@@ -842,7 +908,7 @@ class YamlProviders:
 
     def to_loggable_json_recursive(o):
       if isinstance(o, (str, bytes)):
-        return o
+        return str(o)
       elif callable(getattr(o, '_asdict', None)):
         return to_loggable_json_recursive(o._asdict())
       elif isinstance(o, Mapping) and callable(getattr(o, 'items', None)):
@@ -856,7 +922,7 @@ class YamlProviders:
       logger(prefix + json.dumps(to_loggable_json_recursive(x)))
       return x
 
-    return "LogForTesting" >> beam.Map(log_and_return)
+    return pcoll | "LogForTesting" >> beam.Map(log_and_return)
 
   @staticmethod
   def create_builtin_provider():
@@ -929,7 +995,7 @@ def create_java_builtin_provider():
     return java_provider.create_transform(
         'WindowIntoStrategy',
         {
-            'serializedWindowingStrategy': windowing_strategy.to_runner_api(
+            'serialized_windowing_strategy': windowing_strategy.to_runner_api(
                 empty_context).SerializeToString()
         },
         None)
@@ -952,26 +1018,31 @@ class PypiExpansionService:
   """
   VENV_CACHE = os.path.expanduser("~/.apache_beam/cache/venvs")
 
-  def __init__(self, packages, base_python=sys.executable):
-    self._packages = packages
+  def __init__(
+      self, packages: Iterable[str], base_python: str = sys.executable):
+    if not isinstance(packages, Iterable) or isinstance(packages, str):
+      raise TypeError(
+          "Packages must be an iterable of strings, got %r" % packages)
+    self._packages = list(packages)
     self._base_python = base_python
 
   @classmethod
-  def _key(cls, base_python, packages):
+  def _key(cls, base_python: str, packages: List[str]) -> str:
     return json.dumps({
         'binary': base_python, 'packages': sorted(packages)
     },
                       sort_keys=True)
 
   @classmethod
-  def _path(cls, base_python, packages):
+  def _path(cls, base_python: str, packages: List[str]) -> str:
     return os.path.join(
         cls.VENV_CACHE,
         hashlib.sha256(cls._key(base_python,
                                 packages).encode('utf-8')).hexdigest())
 
   @classmethod
-  def _create_venv_from_scratch(cls, base_python, packages):
+  def _create_venv_from_scratch(
+      cls, base_python: str, packages: List[str]) -> str:
     venv = cls._path(base_python, packages)
     if not os.path.exists(venv):
       try:
@@ -989,7 +1060,8 @@ class PypiExpansionService:
     return venv
 
   @classmethod
-  def _create_venv_from_clone(cls, base_python, packages):
+  def _create_venv_from_clone(
+      cls, base_python: str, packages: List[str]) -> str:
     venv = cls._path(base_python, packages)
     if not os.path.exists(venv):
       try:
@@ -1009,7 +1081,7 @@ class PypiExpansionService:
     return venv
 
   @classmethod
-  def _create_venv_to_clone(cls, base_python):
+  def _create_venv_to_clone(cls, base_python: str) -> str:
     if '.dev' in beam_version:
       base_venv = os.path.dirname(os.path.dirname(base_python))
       print('Cloning dev environment from', base_venv)
@@ -1020,7 +1092,7 @@ class PypiExpansionService:
             'virtualenv-clone'
         ])
 
-  def _venv(self):
+  def _venv(self) -> str:
     return self._create_venv_from_clone(self._base_python, self._packages)
 
   def __enter__(self):
@@ -1153,18 +1225,44 @@ class RenamingProvider(Provider):
     self._underlying_provider.cache_artifacts()
 
 
-def parse_providers(provider_specs):
-  providers = collections.defaultdict(list)
+def flatten_included_provider_specs(
+    provider_specs: Iterable[Mapping]) -> Iterator[Mapping]:
+  from apache_beam.yaml.yaml_transform import SafeLineLoader
   for provider_spec in provider_specs:
-    provider = ExternalProvider.provider_from_spec(provider_spec)
-    for transform_type in provider.provided_transforms():
-      providers[transform_type].append(provider)
-      # TODO: Do this better.
-      provider.to_json = lambda result=provider_spec: result
-  return providers
+    if 'include' in provider_spec:
+      if len(SafeLineLoader.strip_metadata(provider_spec)) != 1:
+        raise ValueError(
+            f"When using include, it must be the only parameter: "
+            f"{provider_spec} "
+            f"at line {{SafeLineLoader.get_line(provider_spec)}}")
+      include_uri = provider_spec['include']
+      try:
+        with urllib.request.urlopen(include_uri) as response:
+          content = response.read()
+      except (ValueError, urllib.error.URLError) as exn:
+        if 'unknown url type' in str(exn):
+          with FileSystems.open(include_uri) as fin:
+            content = fin.read()
+        else:
+          raise
+      included_providers = yaml.load(content, Loader=SafeLineLoader)
+      if not isinstance(included_providers, list):
+        raise ValueError(
+            f"Included file {include_uri} must be a list of Providers "
+            f"at line {{SafeLineLoader.get_line(provider_spec)}}")
+      yield from flatten_included_provider_specs(included_providers)
+    else:
+      yield provider_spec
 
 
-def merge_providers(*provider_sets):
+def parse_providers(provider_specs: Iterable[Mapping]) -> Iterable[Provider]:
+  return [
+      ExternalProvider.provider_from_spec(provider_spec)
+      for provider_spec in flatten_included_provider_specs(provider_specs)
+  ]
+
+
+def merge_providers(*provider_sets) -> Mapping[str, Iterable[Provider]]:
   result = collections.defaultdict(list)
   for provider_set in provider_sets:
     if isinstance(provider_set, Provider):

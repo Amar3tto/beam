@@ -39,7 +39,7 @@ on:
           --
           beam_site_pr: create the documentation update PR against apache/beam-site.
           --
-          prism: build and upload the artifacts to the release for this tag 
+          prism: build and upload the artifacts to the release for this tag
         required: true
         default: |
            {java_artifacts: "no",
@@ -50,9 +50,7 @@ on:
             prism: "no"}
 
 env:
-  GRADLE_ENTERPRISE_ACCESS_KEY: ${{ secrets.GE_ACCESS_TOKEN }}
-  GRADLE_ENTERPRISE_CACHE_USERNAME: ${{ secrets.GE_CACHE_USERNAME }}
-  GRADLE_ENTERPRISE_CACHE_PASSWORD: ${{ secrets.GE_CACHE_PASSWORD }}
+  DEVELOCITY_ACCESS_KEY: ${{ secrets.GE_ACCESS_TOKEN }}
 
 jobs:
   publish_java_artifacts:
@@ -64,11 +62,11 @@ jobs:
         with:
           ref: "v${{ github.event.inputs.RELEASE }}-RC${{ github.event.inputs.RC }}"
           repository: apache/beam
-      - name: Install Java 8
+      - name: Install Java 11
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: '8'
+          java-version: '11'
       - name: Import GPG key
         id: import_gpg
         uses: crazy-max/ghaction-import-gpg@111c56156bcc6918c056dbef52164cfa583dc549
@@ -99,7 +97,7 @@ jobs:
 
   stage_java_source:
     if:  ${{ fromJson(github.event.inputs.STAGE).java_source == 'yes'}}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - name: Mask Apache Password
         run: |
@@ -116,11 +114,11 @@ jobs:
           then
             echo "Must provide an apache password to stage artifacts to https://dist.apache.org/repos/dist/dev/beam/"
           fi
-      - name: Install Java 8
+      - name: Install Java 11
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
-          java-version: '8'
+          java-version: '11'
       - name: Import GPG key
         id: import_gpg
         uses: crazy-max/ghaction-import-gpg@111c56156bcc6918c056dbef52164cfa583dc549
@@ -163,7 +161,7 @@ jobs:
 
   stage_python_artifacts:
     if:  ${{ fromJson(github.event.inputs.STAGE).python_artifacts == 'yes'}}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -186,6 +184,7 @@ jobs:
         uses: ./.github/actions/setup-environment-action
         with:
           python-version: default
+          disable-cache: true
       - name: Import GPG key
         id: import_gpg
         uses: crazy-max/ghaction-import-gpg@111c56156bcc6918c056dbef52164cfa583dc549
@@ -246,8 +245,7 @@ jobs:
 
   stage_docker:
     if:  ${{ fromJson(github.event.inputs.STAGE).docker_artifacts == 'yes'}}
-    # Note: if this ever changes to self-hosted, remove the "Remove default github maven configuration" step
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, ubuntu-20.04, highmem]
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -261,18 +259,10 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '11'
-      - name: Install Python 3.8
+      - name: Install Python 3.9
         uses: actions/setup-python@v5
         with:
-          python-version: '3.8'
-      - run: echo $JAVA_HOME
-      - run: echo "JAVA11_HOME=${JAVA_HOME}" >> "$GITHUB_OUTPUT"
-        id: export-java11
-      - name: Install Java 8
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'temurin'
-          java-version: '8'
+          python-version: '3.9'
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v2
       - name: Remove default github maven configuration
@@ -286,12 +276,12 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USER }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
       - name: Push docker images
-        run: ./gradlew :pushAllDockerImages -PisRelease -Pdocker-pull-licenses -Pprune-images -Pdocker-tag=${{ github.event.inputs.RELEASE }}rc${{ github.event.inputs.RC }} -Pjava11Home=${{steps.export-java11.outputs.JAVA11_HOME}} --no-daemon --no-parallel
+        run: ./gradlew :pushAllDockerImages -PisRelease -Pdocker-pull-licenses -Pprune-images -Pdocker-tag=${{ github.event.inputs.RELEASE }}rc${{ github.event.inputs.RC }} --no-daemon --no-parallel
 
   beam_site_pr:
     if:  ${{ fromJson(github.event.inputs.STAGE).beam_site_pr == 'yes'}}
     # Note: if this ever changes to self-hosted, remove the "Remove default github maven configuration" step
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     env:
       RC_TAG: "v${{ github.event.inputs.RELEASE }}-RC${{ github.event.inputs.RC }}"
       BRANCH_NAME: updates_release_${{ github.event.inputs.RELEASE }}
@@ -311,14 +301,15 @@ jobs:
           path: beam-site
           token: ${{ github.event.inputs.REPO_TOKEN }}
           ref: release-docs
-      - name: Install Python 3.8
+      - name: Install Python 3.9
         uses: actions/setup-python@v5
         with:
-          python-version: '3.8'
+          python-version: '3.9'
       - name: Install node
         uses: actions/setup-node@v4
         with:
           node-version: '16'
+      # TODO(https://github.com/apache/beam/issues/32726) switch to Java11
       - name: Install Java 8
         uses: actions/setup-java@v4
         with:
@@ -339,7 +330,7 @@ jobs:
             pip install -U pip
             pip install tox
             # TODO(https://github.com/apache/beam/issues/20209): Don't hardcode py version in this file.
-            tox -e py38-docs
+            tox -e docs
             rm -rf target/docs/_build/.doctrees
       - name: Build Typescript Docs
         working-directory: beam/sdks/typescript
@@ -410,7 +401,7 @@ jobs:
 
   build_and_stage_prism:
     if: ${{ fromJson(github.event.inputs.STAGE).prism == 'yes'}}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -434,9 +425,7 @@ jobs:
           fi
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.22'
-          cache-dependency-path: |
-             sdks/go.sum
+          go-version: '1.23'
       - name: Import GPG key
         id: import_gpg
         uses: crazy-max/ghaction-import-gpg@111c56156bcc6918c056dbef52164cfa583dc549
@@ -469,7 +458,7 @@ jobs:
 
           svn co https://dist.apache.org/repos/dist/dev/beam
           mkdir -p "${SVN_ARTIFACTS_DIR}"
-          
+
           OUTPUT_DIR=$ROOT_DIR/$SVN_ARTIFACTS_DIR
           mkdir -p $OUTPUT_DIR
           echo "OUTPUT_DIR=$OUTPUT_DIR"
@@ -486,8 +475,8 @@ jobs:
           BUILD_DIR=`pwd`
 
           echo "............Build and stage prism artifacts in the Github Release $GH_RELEASE_ID for tag $RC_TAG.........."
-          
-          
+
+
           # Loop through and build desired set from allowed types.
           for OS in linux windows darwin; do
             for ARCH in amd64 arm64; do
@@ -498,7 +487,7 @@ jobs:
               OUTPUT_FILE="$TARGET_DIR/$TARGET_NAME"
               if GOOS=$OS GOARCH=$ARCH CGO_ENABLED=0 go build -trimpath -buildvcs=false -o "$OUTPUT_FILE" . > /dev/null 2>&1; then
                 cd $TARGET_DIR
-                # Extract real output name. Windows builds automatically have .exe added. 
+                # Extract real output name. Windows builds automatically have .exe added.
                 ARTIFACT=`ls`
                 echo "target built - $ARTIFACT"
 
@@ -511,10 +500,10 @@ jobs:
 
                 # Upload to the release.
                 gh release upload $RC_TAG $ZIP_NAME ${ZIP_NAME}.sha512 ${ZIP_NAME}.asc --clobber
-                
+
                 # Remove the binary from the release directory
                 rm $ARTIFACT
-                
+
                 # Return to our root build dir.
                 cd $BUILD_DIR
               else
@@ -530,6 +519,6 @@ jobs:
 
           echo "...........Adding prism artifacts to the Dev Apache SVN repo..........."
 
-          svn add --force prism
+          svn add --force --parents prism
           svn status
           svn commit -m "Staging Prism artifacts for Apache Beam ${RELEASE} RC${RC_NUM}" --non-interactive --username "${{ github.event.inputs.APACHE_ID }}" --password "${{ github.event.inputs.APACHE_PASSWORD }}"

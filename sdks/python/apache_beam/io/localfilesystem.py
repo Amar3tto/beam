@@ -147,9 +147,7 @@ class LocalFileSystem(FileSystem):
       self,
       path,
       mime_type='application/octet-stream',
-      compression_type=CompressionTypes.AUTO):
-    # type: (...) -> BinaryIO
-
+      compression_type=CompressionTypes.AUTO) -> BinaryIO:
     """Returns a write channel for the given file path.
 
     Args:
@@ -166,9 +164,7 @@ class LocalFileSystem(FileSystem):
       self,
       path,
       mime_type='application/octet-stream',
-      compression_type=CompressionTypes.AUTO):
-    # type: (...) -> BinaryIO
-
+      compression_type=CompressionTypes.AUTO) -> BinaryIO:
     """Returns a read channel for the given file path.
 
     Args:
@@ -368,3 +364,6 @@ class LocalFileSystem(FileSystem):
 
     if exceptions:
       raise BeamIOError("Delete operation failed", exceptions)
+
+  def report_lineage(self, path, lineage):
+    lineage.add('filesystem', 'localhost', path, last_segment_sep='/')

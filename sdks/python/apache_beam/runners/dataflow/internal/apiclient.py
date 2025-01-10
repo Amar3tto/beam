@@ -42,6 +42,7 @@ from packaging import version
 import re
 import sys
 import time
+import traceback
 import warnings
 from copy import copy
 from datetime import datetime
@@ -82,7 +83,7 @@ _FNAPI_ENVIRONMENT_MAJOR_VERSION = '8'
 
 _LOGGER = logging.getLogger(__name__)
 
-_PYTHON_VERSIONS_SUPPORTED_BY_DATAFLOW = ['3.8', '3.9', '3.10', '3.11', '3.12']
+_PYTHON_VERSIONS_SUPPORTED_BY_DATAFLOW = ['3.9', '3.10', '3.11', '3.12']
 
 
 class Environment(object):
@@ -489,6 +490,10 @@ class DataflowApplicationClient(object):
     self.standard_options = options.view_as(StandardOptions)
     self.google_cloud_options = options.view_as(GoogleCloudOptions)
     self._enable_caching = self.google_cloud_options.enable_artifact_caching
+    self._enable_bucket_read_metric_counter = \
+      self.google_cloud_options.enable_bucket_read_metric_counter
+    self._enable_bucket_write_metric_counter =\
+      self.google_cloud_options.enable_bucket_write_metric_counter
     self._root_staging_location = (
         root_staging_location or self.google_cloud_options.staging_location)
     self.environment_version = _FNAPI_ENVIRONMENT_MAJOR_VERSION
@@ -553,13 +558,11 @@ class DataflowApplicationClient(object):
         source_file_names=[cached_path], destination_file_names=[to_path])
     _LOGGER.info('Copied cached artifact from %s to %s', from_path, to_path)
 
-  @retry.with_exponential_backoff(
-      retry_filter=retry.retry_on_server_errors_and_timeout_filter)
   def _uncached_gcs_file_copy(self, from_path, to_path):
     to_folder, to_name = os.path.split(to_path)
     total_size = os.path.getsize(from_path)
-    with open(from_path, 'rb') as f:
-      self.stage_file(to_folder, to_name, f, total_size=total_size)
+    self.stage_file_with_retry(
+        to_folder, to_name, from_path, total_size=total_size)
 
   def _stage_resources(self, pipeline, options):
     google_cloud_options = options.view_as(GoogleCloudOptions)
@@ -688,6 +691,41 @@ class DataflowApplicationClient(object):
                       (gcs_or_local_path, e))
       raise
 
+  @retry.with_exponential_backoff(
+      retry_filter=retry.retry_on_server_errors_and_timeout_filter)
+  def stage_file_with_retry(
+      self,
+      gcs_or_local_path,
+      file_name,
+      stream_or_path,
+      mime_type='application/octet-stream',
+      total_size=None):
+
+    if isinstance(stream_or_path, str):
+      path = stream_or_path
+      with open(path, 'rb') as stream:
+        self.stage_file(
+            gcs_or_local_path, file_name, stream, mime_type, total_size)
+    elif isinstance(stream_or_path, io.IOBase):
+      stream = stream_or_path
+      try:
+        self.stage_file(
+            gcs_or_local_path, file_name, stream, mime_type, total_size)
+      except Exception as exn:
+        if stream.seekable():
+          # reset cursor for possible retrying
+          stream.seek(0)
+          raise exn
+        else:
+          raise retry.PermanentException(
+              "Skip retrying because we caught exception:" +
+              ''.join(traceback.format_exception_only(exn.__class__, exn)) +
+              ', but the stream is not seekable.')
+    else:
+      raise retry.PermanentException(
+          "Skip retrying because type " + str(type(stream_or_path)) +
+          "stream_or_path is unsupported.")
+
   @retry.no_retries  # Using no_retries marks this as an integration point.
   def create_job(self, job):
     """Creates job description. May stage and/or submit for remote execution."""
@@ -699,7 +737,7 @@ class DataflowApplicationClient(object):
         job.options.view_as(GoogleCloudOptions).template_location)
 
     if job.options.view_as(DebugOptions).lookup_experiment('upload_graph'):
-      self.stage_file(
+      self.stage_file_with_retry(
           job.options.view_as(GoogleCloudOptions).staging_location,
           "dataflow_graph.json",
           io.BytesIO(job.json().encode('utf-8')))
@@ -714,7 +752,7 @@ class DataflowApplicationClient(object):
     if job_location:
       gcs_or_local_path = os.path.dirname(job_location)
       file_name = os.path.basename(job_location)
-      self.stage_file(
+      self.stage_file_with_retry(
           gcs_or_local_path, file_name, io.BytesIO(job.json().encode('utf-8')))
 
     if not template_location:
@@ -729,6 +767,12 @@ class DataflowApplicationClient(object):
     # By default Dataflow pipelines use containers hosted in Dataflow GCR
     # instead of Docker Hub.
     image_suffix = beam_container_image_url.rsplit('/', 1)[1]
+
+    # trim "RCX" as release candidate tag exists on Docker Hub but not GCR
+    check_rc = image_suffix.lower().split('rc')
+    if len(check_rc) == 2:
+      image_suffix = image_suffix[:-2 - len(check_rc[1])]
+
     return names.DATAFLOW_CONTAINER_IMAGE_REPOSITORY + '/' + image_suffix
 
   @staticmethod
@@ -780,7 +824,7 @@ class DataflowApplicationClient(object):
     resources = self._stage_resources(job.proto_pipeline, job.options)
 
     # Stage proto pipeline.
-    self.stage_file(
+    self.stage_file_with_retry(
         job.google_cloud_options.staging_location,
         shared_names.STAGED_PIPELINE_FILENAME,
         io.BytesIO(job.proto_pipeline.SerializeToString()))

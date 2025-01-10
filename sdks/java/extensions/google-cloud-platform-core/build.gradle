@@ -39,7 +39,7 @@ dependencies {
   implementation library.java.vendored_guava_32_1_2_jre
   implementation project(path: ":sdks:java:core", configuration: "shadow")
   implementation project(path: ":runners:core-java")
-  implementation library.java.google_http_client_jackson2
+  implementation library.java.google_http_client_gson
   implementation library.java.google_auth_library_oauth2_http
   implementation library.java.google_api_client
   implementation library.java.bigdataoss_gcsio
@@ -66,12 +66,10 @@ task integrationTestKms(type: Test) {
   group = "Verification"
   def gcpProject = project.findProperty('gcpProject') ?: 'apache-beam-testing'
   def gcpTempRoot = project.findProperty('gcpTempRootKms') ?: 'gs://temp-storage-for-end-to-end-tests-cmek'
-  def gcpGrpcTempRoot = project.findProperty('gcpGrpcTempRoot') ?: 'gs://gcs-grpc-team-apache-beam-testing'
   def dataflowKmsKey = project.findProperty('dataflowKmsKey') ?: "projects/apache-beam-testing/locations/global/keyRings/beam-it/cryptoKeys/test"
   systemProperty "beamTestPipelineOptions", JsonOutput.toJson([
           "--project=${gcpProject}",
           "--tempRoot=${gcpTempRoot}",
-          "--grpcTempRoot=${gcpGrpcTempRoot}",
           "--dataflowKmsKey=${dataflowKmsKey}",
   ])
 

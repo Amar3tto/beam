@@ -86,7 +86,7 @@ public class AvroGenericRecordToStorageApiProto {
           .put(Schema.Type.STRING, Object::toString)
           .put(Schema.Type.BOOLEAN, Function.identity())
           .put(Schema.Type.ENUM, o -> o.toString())
-          .put(Schema.Type.BYTES, o -> ByteString.copyFrom((byte[]) o))
+          .put(Schema.Type.BYTES, o -> ByteString.copyFrom(((ByteBuffer) o).duplicate()))
           .build();
 
   // A map of supported logical types to their encoding functions.
@@ -247,17 +247,15 @@ public class AvroGenericRecordToStorageApiProto {
         break;
       case MAP:
         Schema keyType = Schema.create(Schema.Type.STRING);
-        Schema valueType = TypeWithNullability.create(schema.getElementType()).getType();
+        Schema valueType = Schema.create(schema.getValueType().getType());
         if (valueType == null) {
           throw new RuntimeException("Unexpected null element type!");
         }
         TableFieldSchema keyFieldSchema =
-            fieldDescriptorFromAvroField(
-                new Schema.Field("key", keyType, "key of the map entry", Schema.Field.NULL_VALUE));
+            fieldDescriptorFromAvroField(new Schema.Field("key", keyType, "key of the map entry"));
         TableFieldSchema valueFieldSchema =
             fieldDescriptorFromAvroField(
-                new Schema.Field(
-                    "value", valueType, "value of the map entry", Schema.Field.NULL_VALUE));
+                new Schema.Field("value", valueType, "value of the map entry"));
         builder =
             builder
                 .setType(TableFieldSchema.Type.STRUCT)
@@ -279,6 +277,7 @@ public class AvroGenericRecordToStorageApiProto {
         builder =
             builder
                 .setType(unionFieldSchema.getType())
+                .setMode(unionFieldSchema.getMode())
                 .addAllFields(unionFieldSchema.getFieldsList());
         break;
       default:
@@ -313,7 +312,9 @@ public class AvroGenericRecordToStorageApiProto {
       FieldDescriptor fieldDescriptor, Schema.Field avroField, String name, GenericRecord record) {
     @Nullable Object value = record.get(name);
     if (value == null) {
-      if (fieldDescriptor.isOptional()) {
+      if (fieldDescriptor.isOptional()
+          || avroField.schema().getTypes().stream()
+              .anyMatch(t -> t.getType() == Schema.Type.NULL)) {
         return null;
       } else {
         throw new IllegalArgumentException(
@@ -346,7 +347,7 @@ public class AvroGenericRecordToStorageApiProto {
         return toProtoValue(fieldDescriptor, type.getType(), value);
       case MAP:
         Map<CharSequence, Object> map = (Map<CharSequence, Object>) value;
-        Schema valueType = TypeWithNullability.create(avroSchema.getElementType()).getType();
+        Schema valueType = Schema.create(avroSchema.getValueType().getType());
         if (valueType == null) {
           throw new RuntimeException("Unexpected null element type!");
         }
