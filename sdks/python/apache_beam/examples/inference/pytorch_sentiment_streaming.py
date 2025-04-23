@@ -187,7 +187,7 @@ def run(
     argv=None, save_main_session=True, test_pipeline=None) -> PipelineResult:
   known_args, pipeline_args = parse_known_args(argv)
 
-  if '--mode' in pipeline_args and 'batch' in pipeline_args:
+  if known_args.mode == 'batch':
     return run_batch_pipeline(known_args, pipeline_args)
   launch_batch_pubsub_load(known_args)
 
