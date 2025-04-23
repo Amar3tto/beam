@@ -78,7 +78,7 @@ def parse_known_args(argv):
   """Parses command-line arguments for pipeline execution."""
   parser = argparse.ArgumentParser()
   parser.add_argument(
-      '--output_table', required=True, help='Path to output BigQuery table')
+      '--output_table', help='Path to output BigQuery table')
   parser.add_argument(
       '--model_path',
       default='distilbert-base-uncased-finetuned-sst-2-english',
@@ -86,7 +86,6 @@ def parse_known_args(argv):
   parser.add_argument(
       '--model_state_dict_path',
       dest='model_state_dict_path',
-      required=True,
       help="Path to the model's state_dict.")
   parser.add_argument(
       '--input', required=True, help='Path to input file on GCS')
