@@ -158,14 +158,15 @@ def cleanup_pubsub_resources(
     print(f"Failed to delete topic: {e}")
 
 
-def launch_batch_pubsub_load(known_args):
+def launch_batch_pubsub_load(known_args, pipeline_args):
   print("Launching batch pipeline to publish input data to Pub/Sub...")
   subprocess.Popen([
       sys.executable, __file__,
       "--project", known_args.project,
       "--input", known_args.input,
       "--pubsub_topic", known_args.pubsub_topic,
-      "--mode", "batch"
+      "--mode", "batch",
+      *pipeline_args
   ])
 
 
@@ -189,7 +190,7 @@ def run(
 
   if known_args.mode == 'batch':
     return run_batch_pipeline(known_args, pipeline_args)
-  launch_batch_pubsub_load(known_args)
+  launch_batch_pubsub_load(known_args, pipeline_args)
 
   pipeline_options = PipelineOptions(pipeline_args)
   pipeline_options.view_as(SetupOptions).save_main_session = save_main_session
