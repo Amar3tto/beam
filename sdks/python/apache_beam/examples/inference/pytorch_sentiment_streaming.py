@@ -24,6 +24,7 @@ Resources like Pub/Sub topic/subscription cleanup is handled programmatically.
 import argparse
 import logging
 import subprocess
+import sys
 from collections.abc import Iterable
 
 from google.cloud import pubsub_v1
@@ -159,7 +160,7 @@ def cleanup_pubsub_resources(
 def launch_batch_pubsub_load(known_args):
   print("Launching batch pipeline to publish input data to Pub/Sub...")
   subprocess.Popen([
-      "python", __file__,
+      sys.executable, __file__,
       "--project", known_args.project,
       "--input", known_args.input,
       "--pubsub_topic", known_args.pubsub_topic,
