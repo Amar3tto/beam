@@ -101,6 +101,8 @@ def parse_known_args(argv):
       help='Pub/Sub subscription to read from')
   parser.add_argument(
       '--project', default='apache-beam-testing', help='GCP project ID')
+  parser.add_argument(
+      '--mode', default='streaming', help='Streaming (default) or batch.')
   return parser.parse_known_args(argv)
 
 
