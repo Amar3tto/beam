@@ -18,12 +18,12 @@ with DistilBERT model.
 It reads input lines from a Pub/Sub topic (populated from a GCS file),
 performs sentiment classification using a DistilBERT model via RunInference,
 and writes results to BigQuery.
-Resources like Pub/Sub topic/subscription and BigQuery table cleanup are
-handled programmatically.
+Resources like Pub/Sub topic/subscription cleanup is handled programmatically.
 """
 
 import argparse
 import logging
+import subprocess
 from collections.abc import Iterable
 
 from google.cloud import pubsub_v1
@@ -156,9 +156,39 @@ def cleanup_pubsub_resources(
     print(f"Failed to delete topic: {e}")
 
 
+def launch_batch_pubsub_load(known_args):
+  print("Launching batch pipeline to publish input data to Pub/Sub...")
+  subprocess.Popen([
+      "python", __file__,
+      "--project", known_args.project,
+      "--input", known_args.input,
+      "--pubsub_topic", known_args.pubsub_topic,
+      "--mode", "batch"
+  ])
+
+
+def run_batch_pipeline(known_args, pipeline_args):
+  """Load data pipeline: read lines from GCS file and send to Pub/Sub."""
+  pipeline_options = PipelineOptions(pipeline_args)
+  pipeline = beam.Pipeline(options=pipeline_options)
+  _ = (
+    pipeline
+    | 'ReadGCSFile' >> beam.io.ReadFromText(known_args.input)
+    | 'FilterEmpty' >> beam.Filter(lambda line: line.strip())
+    | 'ToBytes' >> beam.Map(lambda line: line.encode('utf-8'))
+    |
+    'PublishToPubSub' >> beam.io.WriteToPubSub(topic=known_args.pubsub_topic))
+  return pipeline.run()
+
+
 def run(
     argv=None, save_main_session=True, test_pipeline=None) -> PipelineResult:
   known_args, pipeline_args = parse_known_args(argv)
+
+  if '--mode' in pipeline_args and 'batch' in pipeline_args:
+    return run_batch_pipeline(known_args, pipeline_args)
+  launch_batch_pubsub_load(known_args)
+
   pipeline_options = PipelineOptions(pipeline_args)
   pipeline_options.view_as(SetupOptions).save_main_session = save_main_session
   pipeline_options.view_as(StandardOptions).streaming = True
@@ -176,16 +206,7 @@ def run(
 
   pipeline = test_pipeline or beam.Pipeline(options=pipeline_options)
 
-  # 1. Load data pipeline: read lines from GCS file and send to Pub/Sub
-  _ = (
-      pipeline
-      | 'ReadGCSFile' >> beam.io.ReadFromText(known_args.input)
-      | 'FilterEmpty' >> beam.Filter(lambda line: line.strip())
-      | 'ToBytes' >> beam.Map(lambda line: line.encode('utf-8'))
-      |
-      'PublishToPubSub' >> beam.io.WriteToPubSub(topic=known_args.pubsub_topic))
-
-  # 2. Main Streaming pipeline: read from PubSub subscription, process, write
+  # Main Streaming pipeline: read from PubSub subscription, process, write
   # result to BigQuery output table
   _ = (
       pipeline
