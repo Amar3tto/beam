@@ -23,8 +23,8 @@ Resources like Pub/Sub topic/subscription cleanup is handled programmatically.
 
 import argparse
 import logging
-import subprocess
-import sys
+import threading
+import time
 from collections.abc import Iterable
 
 from google.cloud import pubsub_v1
@@ -74,11 +74,20 @@ def tokenize_text(text: str,
   return text, {k: torch.squeeze(v) for k, v in tokenized.items()}
 
 
+class RateLimitDoFn(beam.DoFn):
+  def __init__(self, rate_per_sec: float):
+    self.delay = 1.0 / rate_per_sec
+
+  def process(self, element):
+    time.sleep(self.delay)
+    yield element
+
+
 def parse_known_args(argv):
   """Parses command-line arguments for pipeline execution."""
   parser = argparse.ArgumentParser()
   parser.add_argument(
-      '--output_table', help='Path to output BigQuery table')
+      '--output_table', required=True, help='Path to output BigQuery table')
   parser.add_argument(
       '--model_path',
       default='distilbert-base-uncased-finetuned-sst-2-english',
@@ -86,6 +95,7 @@ def parse_known_args(argv):
   parser.add_argument(
       '--model_state_dict_path',
       dest='model_state_dict_path',
+      required=True,
       help="Path to the model's state_dict.")
   parser.add_argument(
       '--input', required=True, help='Path to input file on GCS')
@@ -101,7 +111,12 @@ def parse_known_args(argv):
   parser.add_argument(
       '--project', default='apache-beam-testing', help='GCP project ID')
   parser.add_argument(
-      '--mode', default='streaming', help='Streaming (default) or batch.')
+      '--mode', default='streaming', choices=['streaming', 'batch'])
+  parser.add_argument(
+      '--rate_limit',
+      type=float,
+      default=None,
+      help='Elements per second to send to Pub/Sub')
   return parser.parse_known_args(argv)
 
 
@@ -158,26 +173,33 @@ def cleanup_pubsub_resources(
     print(f"Failed to delete topic: {e}")
 
 
-def launch_batch_pubsub_load(known_args, pipeline_args):
-  print("Launching batch pipeline to publish input data to Pub/Sub...")
-  subprocess.Popen([
-      sys.executable, __file__,
-      "--project", known_args.project,
-      "--input", known_args.input,
-      "--pubsub_topic", known_args.pubsub_topic,
-      "--mode", "batch",
-      *pipeline_args
-  ])
-
-
-def run_batch_pipeline(known_args, pipeline_args):
+def run_load_pipeline(known_args, pipeline_args):
   """Load data pipeline: read lines from GCS file and send to Pub/Sub."""
+  def override_or_add(args, flag, value):
+    if flag in args:
+      idx = args.index(flag)
+      args[idx + 1] = str(value)
+    else:
+      args.extend([flag, str(value)])
+
+  override_or_add(pipeline_args, '--device', 'CPU')
+  override_or_add(pipeline_args, '--num_workers', '5')
+  override_or_add(pipeline_args, '--max_num_workers', '10')
+
   pipeline_options = PipelineOptions(pipeline_args)
   pipeline = beam.Pipeline(options=pipeline_options)
-  _ = (
+  lines = (
     pipeline
     | 'ReadGCSFile' >> beam.io.ReadFromText(known_args.input)
     | 'FilterEmpty' >> beam.Filter(lambda line: line.strip())
+  )
+  if known_args.rate_limit:
+    lines = (
+      lines
+      | 'RateLimit' >> beam.ParDo(RateLimitDoFn(rate_per_sec=known_args.rate_limit)))
+
+  _ = (
+    lines
     | 'ToBytes' >> beam.Map(lambda line: line.encode('utf-8'))
     |
     'PublishToPubSub' >> beam.io.WriteToPubSub(topic=known_args.pubsub_topic))
@@ -188,9 +210,11 @@ def run(
     argv=None, save_main_session=True, test_pipeline=None) -> PipelineResult:
   known_args, pipeline_args = parse_known_args(argv)
 
-  if known_args.mode == 'batch':
-    return run_batch_pipeline(known_args, pipeline_args)
-  launch_batch_pubsub_load(known_args, pipeline_args)
+  threading.Thread(
+      target=run_load_pipeline, args=(known_args, pipeline_args), daemon=True
+  ).start()
+
+  # if known_args.mode == 'batch': TODO
 
   pipeline_options = PipelineOptions(pipeline_args)
   pipeline_options.view_as(SetupOptions).save_main_session = save_main_session
@@ -199,7 +223,8 @@ def run(
   model_handler = PytorchModelHandlerKeyedTensor(
       model_class=DistilBertForSequenceClassification,
       model_params={'config': DistilBertConfig(num_labels=2)},
-      state_dict_path=known_args.model_state_dict_path)
+      state_dict_path=known_args.model_state_dict_path,
+      device='GPU')
   ensure_pubsub_resources(
       project=known_args.project,
       topic_path=known_args.pubsub_topic,
