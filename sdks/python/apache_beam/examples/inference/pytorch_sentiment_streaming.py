@@ -185,6 +185,8 @@ def run_load_pipeline(known_args, pipeline_args):
   override_or_add(pipeline_args, '--device', 'CPU')
   override_or_add(pipeline_args, '--num_workers', '5')
   override_or_add(pipeline_args, '--max_num_workers', '10')
+  override_or_add(
+      pipeline_args, '--job_name', f"sentiment-load-pubsub-{int(time.time())}")
   override_or_add(pipeline_args, '--project', known_args.project)
 
   pipeline_options = PipelineOptions(pipeline_args)
