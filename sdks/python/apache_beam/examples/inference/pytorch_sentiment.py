@@ -214,14 +214,15 @@ def run(
   known_args, pipeline_args = parse_known_args(argv)
 
   threading.Thread(
-      target=run_load_pipeline, args=(known_args, pipeline_args), daemon=True
+      target=lambda: (
+          time.sleep(600), run_load_pipeline(known_args, pipeline_args)),
+      daemon=True
   ).start()
-
-  # if known_args.mode == 'batch': TODO
 
   pipeline_options = PipelineOptions(pipeline_args)
   pipeline_options.view_as(SetupOptions).save_main_session = save_main_session
-  pipeline_options.view_as(StandardOptions).streaming = True
+  if known_args.mode == 'streaming':
+    pipeline_options.view_as(StandardOptions).streaming = True
 
   model_handler = PytorchModelHandlerKeyedTensor(
       model_class=DistilBertForSequenceClassification,
@@ -239,11 +240,17 @@ def run(
 
   # Main Streaming pipeline: read from PubSub subscription, process, write
   # result to BigQuery output table
-  _ = (
+  read_input = (
       pipeline
       | 'ReadFromPubSub' >>
       beam.io.ReadFromPubSub(subscription=known_args.pubsub_subscription)
-      | 'DecodeText' >> beam.Map(lambda x: x.decode('utf-8'))
+      | 'DecodeText' >> beam.Map(lambda x: x.decode('utf-8')))
+
+  if known_args.mode == 'batch':
+    read_input |= 'WindowFixed' >> beam.WindowInto(beam.window.FixedWindows(60))
+
+  _ = (
+      read_input
       | 'Tokenize' >> beam.Map(lambda text: tokenize_text(text, tokenizer))
       | 'WindowedOutput' >> beam.WindowInto(
           beam.window.FixedWindows(60),
