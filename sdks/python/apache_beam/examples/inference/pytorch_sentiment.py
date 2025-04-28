@@ -215,7 +215,7 @@ def run(
 
   threading.Thread(
       target=lambda: (
-          time.sleep(600), run_load_pipeline(known_args, pipeline_args)),
+          time.sleep(800), run_load_pipeline(known_args, pipeline_args)),
       daemon=True
   ).start()
 
