@@ -196,7 +196,7 @@ def run_load_pipeline(known_args, pipeline_args):
     | 'ReadGCSFile' >> beam.io.ReadFromText(known_args.input)
     | 'FilterEmpty' >> beam.Filter(lambda line: line.strip())
   )
-  if known_args.rate_limit:
+  if known_args.mode == 'streaming' and known_args.rate_limit:
     lines = (
       lines
       | 'RateLimit' >> beam.ParDo(RateLimitDoFn(rate_per_sec=known_args.rate_limit)))
@@ -224,14 +224,16 @@ def run(
 
   pipeline_options = PipelineOptions(pipeline_args)
   pipeline_options.view_as(SetupOptions).save_main_session = save_main_session
+  method = beam.io.WriteToBigQuery.Method.STORAGE_WRITE_API
   if known_args.mode == 'streaming':
+    method = beam.io.WriteToBigQuery.Method.STREAMING_INSERTS
     pipeline_options.view_as(StandardOptions).streaming = True
 
   model_handler = PytorchModelHandlerKeyedTensor(
       model_class=DistilBertForSequenceClassification,
       model_params={'config': DistilBertConfig(num_labels=2)},
       state_dict_path=known_args.model_state_dict_path,
-      device='GPU')
+      device='CPU')
   ensure_pubsub_resources(
       project=known_args.project,
       topic_path=known_args.pubsub_topic,
@@ -263,7 +265,7 @@ def run(
           schema='text:STRING, sentiment:STRING, confidence:FLOAT',
           write_disposition=beam.io.BigQueryDisposition.WRITE_APPEND,
           create_disposition=beam.io.BigQueryDisposition.CREATE_IF_NEEDED,
-          method=beam.io.WriteToBigQuery.Method.STREAMING_INSERTS))
+          method=method))
 
   result = pipeline.run()
   result.wait_until_finish(duration=1800000)  # 30 min
