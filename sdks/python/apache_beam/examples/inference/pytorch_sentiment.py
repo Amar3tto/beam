@@ -224,7 +224,7 @@ def run(
 
   pipeline_options = PipelineOptions(pipeline_args)
   pipeline_options.view_as(SetupOptions).save_main_session = save_main_session
-  method = beam.io.WriteToBigQuery.Method.STORAGE_WRITE_API
+  method = beam.io.WriteToBigQuery.Method.FILE_LOADS
   if known_args.mode == 'streaming':
     method = beam.io.WriteToBigQuery.Method.STREAMING_INSERTS
     pipeline_options.view_as(StandardOptions).streaming = True
@@ -233,7 +233,7 @@ def run(
       model_class=DistilBertForSequenceClassification,
       model_params={'config': DistilBertConfig(num_labels=2)},
       state_dict_path=known_args.model_state_dict_path,
-      device='CPU')
+      device='GPU')
   ensure_pubsub_resources(
       project=known_args.project,
       topic_path=known_args.pubsub_topic,
