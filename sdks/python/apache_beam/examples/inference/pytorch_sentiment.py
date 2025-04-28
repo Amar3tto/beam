@@ -243,21 +243,18 @@ def run(
 
   pipeline = test_pipeline or beam.Pipeline(options=pipeline_options)
 
-  # Main Streaming pipeline: read from PubSub subscription, process, write
+  # Main pipeline: read from PubSub subscription, process, write
   # result to BigQuery output table
-  read_input = (
+  _ = (
       pipeline
       | 'ReadFromPubSub' >>
       beam.io.ReadFromPubSub(subscription=known_args.pubsub_subscription)
-      | 'DecodeText' >> beam.Map(lambda x: x.decode('utf-8')))
-
-  _ = (
-      read_input
-      | 'Tokenize' >> beam.Map(lambda text: tokenize_text(text, tokenizer))
+      | 'DecodeText' >> beam.Map(lambda x: x.decode('utf-8'))
       | 'WindowedOutput' >> beam.WindowInto(
           beam.window.FixedWindows(60),
           trigger=beam.trigger.AfterProcessingTime(30),
           accumulation_mode=beam.trigger.AccumulationMode.DISCARDING)
+      | 'Tokenize' >> beam.Map(lambda text: tokenize_text(text, tokenizer))
       | 'RunInference' >> RunInference(KeyedModelHandler(model_handler))
       | 'PostProcess' >> beam.ParDo(SentimentPostProcessor(tokenizer))
       | 'WriteToBigQuery' >> beam.io.WriteToBigQuery(
