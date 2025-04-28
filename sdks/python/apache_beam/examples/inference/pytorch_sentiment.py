@@ -111,7 +111,7 @@ def parse_known_args(argv):
   parser.add_argument(
       '--project', default='apache-beam-testing', help='GCP project ID')
   parser.add_argument(
-      '--mode', default='streaming', choices=['streaming', 'batch'])
+      '--mode', default='batch', choices=['streaming', 'batch'])
   parser.add_argument(
       '--rate_limit',
       type=float,
@@ -213,11 +213,14 @@ def run(
     argv=None, save_main_session=True, test_pipeline=None) -> PipelineResult:
   known_args, pipeline_args = parse_known_args(argv)
 
-  threading.Thread(
-      target=lambda: (
-          time.sleep(800), run_load_pipeline(known_args, pipeline_args)),
-      daemon=True
-  ).start()
+  if known_args.mode == 'streaming':
+    threading.Thread(
+        target=lambda: (
+            time.sleep(800), run_load_pipeline(known_args, pipeline_args)),
+        daemon=True
+    ).start()
+  else:
+    run_load_pipeline(known_args, pipeline_args)
 
   pipeline_options = PipelineOptions(pipeline_args)
   pipeline_options.view_as(SetupOptions).save_main_session = save_main_session
@@ -245,9 +248,6 @@ def run(
       | 'ReadFromPubSub' >>
       beam.io.ReadFromPubSub(subscription=known_args.pubsub_subscription)
       | 'DecodeText' >> beam.Map(lambda x: x.decode('utf-8')))
-
-  if known_args.mode == 'batch':
-    read_input |= 'WindowFixed' >> beam.WindowInto(beam.window.FixedWindows(60))
 
   _ = (
       read_input
