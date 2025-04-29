@@ -250,10 +250,11 @@ def run(
       | 'ReadFromPubSub' >>
       beam.io.ReadFromPubSub(subscription=known_args.pubsub_subscription)
       | 'DecodeText' >> beam.Map(lambda x: x.decode('utf-8'))
-      | 'WindowedOutput' >> beam.WindowInto(
-          beam.window.FixedWindows(60),
-          trigger=beam.trigger.AfterProcessingTime(30),
-          accumulation_mode=beam.trigger.AccumulationMode.DISCARDING)
+      # | 'WindowedOutput' >> beam.WindowInto(
+      #     beam.window.FixedWindows(60),
+      #     trigger=beam.trigger.AfterProcessingTime(30),
+      #     accumulation_mode=beam.trigger.AccumulationMode.DISCARDING,
+      #     allowed_lateness=0)
       | 'Tokenize' >> beam.Map(lambda text: tokenize_text(text, tokenizer))
       | 'RunInference' >> RunInference(KeyedModelHandler(model_handler))
       | 'PostProcess' >> beam.ParDo(SentimentPostProcessor(tokenizer))
@@ -262,7 +263,8 @@ def run(
           schema='text:STRING, sentiment:STRING, confidence:FLOAT',
           write_disposition=beam.io.BigQueryDisposition.WRITE_APPEND,
           create_disposition=beam.io.BigQueryDisposition.CREATE_IF_NEEDED,
-          method=method))
+          method=method,
+          triggering_frequency=100))
 
   result = pipeline.run()
   result.wait_until_finish(duration=1800000)  # 30 min
