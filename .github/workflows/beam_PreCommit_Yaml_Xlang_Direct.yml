@@ -88,10 +88,6 @@ jobs:
         uses: ./.github/actions/setup-environment-action
         with:
           python-version: default
-      - name: run Build expansion service script
-        uses: ./.github/actions/gradle-command-self-hosted-action
-        with:
-          gradle-command: :sdks:java:io:google-cloud-platform:expansion-service:build
       - name: run PreCommit Yaml Xlang Direct script
         uses: ./.github/actions/gradle-command-self-hosted-action
         with:
