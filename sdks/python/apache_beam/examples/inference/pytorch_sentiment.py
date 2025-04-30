@@ -263,8 +263,7 @@ def run(
           schema='text:STRING, sentiment:STRING, confidence:FLOAT',
           write_disposition=beam.io.BigQueryDisposition.WRITE_APPEND,
           create_disposition=beam.io.BigQueryDisposition.CREATE_IF_NEEDED,
-          method=method,
-          triggering_frequency=100))
+          method=method))
 
   result = pipeline.run()
   result.wait_until_finish(duration=1800000)  # 30 min
