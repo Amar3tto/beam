@@ -224,7 +224,7 @@ def run(
 
   pipeline_options = PipelineOptions(pipeline_args)
   pipeline_options.view_as(SetupOptions).save_main_session = save_main_session
-  method = beam.io.WriteToBigQuery.Method.FILE_LOADS
+  method = beam.io.WriteToBigQuery.Method.STORAGE_WRITE_API
   if known_args.mode == 'streaming':
     method = beam.io.WriteToBigQuery.Method.STREAMING_INSERTS
     pipeline_options.view_as(StandardOptions).streaming = True
