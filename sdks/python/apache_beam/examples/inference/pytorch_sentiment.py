@@ -111,7 +111,7 @@ def parse_known_args(argv):
   parser.add_argument(
       '--project', default='apache-beam-testing', help='GCP project ID')
   parser.add_argument(
-      '--mode', default='batch', choices=['streaming', 'batch'])
+      '--mode', default='streaming', choices=['streaming', 'batch'])
   parser.add_argument(
       '--rate_limit',
       type=float,
@@ -196,7 +196,7 @@ def run_load_pipeline(known_args, pipeline_args):
     | 'ReadGCSFile' >> beam.io.ReadFromText(known_args.input)
     | 'FilterEmpty' >> beam.Filter(lambda line: line.strip())
   )
-  if known_args.mode == 'streaming' and known_args.rate_limit:
+  if known_args.rate_limit:
     lines = (
       lines
       | 'RateLimit' >> beam.ParDo(RateLimitDoFn(rate_per_sec=known_args.rate_limit)))
@@ -212,6 +212,11 @@ def run_load_pipeline(known_args, pipeline_args):
 def run(
     argv=None, save_main_session=True, test_pipeline=None) -> PipelineResult:
   known_args, pipeline_args = parse_known_args(argv)
+
+  ensure_pubsub_resources(
+      project=known_args.project,
+      topic_path=known_args.pubsub_topic,
+      subscription_path=known_args.pubsub_subscription)
 
   if known_args.mode == 'streaming':
     threading.Thread(
@@ -233,29 +238,31 @@ def run(
       model_params={'config': DistilBertConfig(num_labels=2)},
       state_dict_path=known_args.model_state_dict_path,
       device='GPU')
-  ensure_pubsub_resources(
-      project=known_args.project,
-      topic_path=known_args.pubsub_topic,
-      subscription_path=known_args.pubsub_subscription)
 
   tokenizer = DistilBertTokenizerFast.from_pretrained(known_args.model_path)
 
   pipeline = test_pipeline or beam.Pipeline(options=pipeline_options)
 
-  # Main pipeline: read from PubSub subscription, process, write
-  # result to BigQuery output table
+  # Main pipeline: read, process, write result to BigQuery output table
+  if known_args.mode == 'batch':
+    input = (
+        pipeline
+        | 'ReadGCSFile' >> beam.io.ReadFromText(known_args.input)
+        | 'FilterEmpty' >> beam.Filter(lambda line: line.strip()))
+  else:
+    input = (
+        pipeline
+        | 'ReadFromPubSub' >>
+        beam.io.ReadFromPubSub(subscription=known_args.pubsub_subscription)
+        | 'DecodeText' >> beam.Map(lambda x: x.decode('utf-8'))
+        | 'WindowedOutput' >> beam.WindowInto(
+            beam.window.FixedWindows(60),
+            trigger=beam.trigger.AfterProcessingTime(30),
+            accumulation_mode=beam.trigger.AccumulationMode.DISCARDING,
+            allowed_lateness=0))
+
   _ = (
-      pipeline
-      | 'ReadGCSFile' >> beam.io.ReadFromText(known_args.input)
-      | 'FilterEmpty' >> beam.Filter(lambda line: line.strip())
-      # | 'ReadFromPubSub' >>
-      # beam.io.ReadFromPubSub(subscription=known_args.pubsub_subscription)
-      # | 'DecodeText' >> beam.Map(lambda x: x.decode('utf-8'))
-      # | 'WindowedOutput' >> beam.WindowInto(
-      #     beam.window.FixedWindows(60),
-      #     trigger=beam.trigger.AfterProcessingTime(30),
-      #     accumulation_mode=beam.trigger.AccumulationMode.DISCARDING,
-      #     allowed_lateness=0)
+      input
       | 'Tokenize' >> beam.Map(lambda text: tokenize_text(text, tokenizer))
       | 'RunInference' >> RunInference(KeyedModelHandler(model_handler))
       | 'PostProcess' >> beam.ParDo(SentimentPostProcessor(tokenizer))
