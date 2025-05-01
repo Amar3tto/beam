@@ -219,8 +219,6 @@ def run(
             time.sleep(800), run_load_pipeline(known_args, pipeline_args)),
         daemon=True
     ).start()
-  else:
-    run_load_pipeline(known_args, pipeline_args)
 
   pipeline_options = PipelineOptions(pipeline_args)
   pipeline_options.view_as(SetupOptions).save_main_session = save_main_session
@@ -248,9 +246,11 @@ def run(
   # result to BigQuery output table
   _ = (
       pipeline
-      | 'ReadFromPubSub' >>
-      beam.io.ReadFromPubSub(subscription=known_args.pubsub_subscription)
-      | 'DecodeText' >> beam.Map(lambda x: x.decode('utf-8'))
+      | 'ReadGCSFile' >> beam.io.ReadFromText(known_args.input)
+      | 'FilterEmpty' >> beam.Filter(lambda line: line.strip())
+      # | 'ReadFromPubSub' >>
+      # beam.io.ReadFromPubSub(subscription=known_args.pubsub_subscription)
+      # | 'DecodeText' >> beam.Map(lambda x: x.decode('utf-8'))
       # | 'WindowedOutput' >> beam.WindowInto(
       #     beam.window.FixedWindows(60),
       #     trigger=beam.trigger.AfterProcessingTime(30),
