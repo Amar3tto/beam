@@ -230,7 +230,7 @@ def run(
   method = beam.io.WriteToBigQuery.Method.FILE_LOADS
   pipeline_options.view_as(StandardOptions).streaming = False
   if known_args.mode == 'streaming':
-    method = beam.io.WriteToBigQuery.Method.STREAMING_INSERTS
+    method = beam.io.WriteToBigQuery.Method.STORAGE_WRITE_API
     pipeline_options.view_as(StandardOptions).streaming = True
 
   model_handler = PytorchModelHandlerKeyedTensor(
