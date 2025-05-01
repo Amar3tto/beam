@@ -221,7 +221,7 @@ def run(
   if known_args.mode == 'streaming':
     threading.Thread(
         target=lambda: (
-            time.sleep(800), run_load_pipeline(known_args, pipeline_args)),
+            time.sleep(700), run_load_pipeline(known_args, pipeline_args)),
         daemon=True
     ).start()
 
@@ -230,14 +230,14 @@ def run(
   method = beam.io.WriteToBigQuery.Method.FILE_LOADS
   pipeline_options.view_as(StandardOptions).streaming = False
   if known_args.mode == 'streaming':
-    method = beam.io.WriteToBigQuery.Method.STORAGE_WRITE_API
+    method = beam.io.WriteToBigQuery.Method.STREAMING_INSERTS
     pipeline_options.view_as(StandardOptions).streaming = True
 
   model_handler = PytorchModelHandlerKeyedTensor(
       model_class=DistilBertForSequenceClassification,
       model_params={'config': DistilBertConfig(num_labels=2)},
       state_dict_path=known_args.model_state_dict_path,
-      device='GPU')
+      device='CPU')
 
   tokenizer = DistilBertTokenizerFast.from_pretrained(known_args.model_path)
 
@@ -277,10 +277,10 @@ def run(
   result.wait_until_finish(duration=1800000)  # 30 min
   result.cancel()
 
-  cleanup_pubsub_resources(
-      project=known_args.project,
-      topic_path=known_args.pubsub_topic,
-      subscription_path=known_args.pubsub_subscription)
+  # cleanup_pubsub_resources(
+  #     project=known_args.project,
+  #     topic_path=known_args.pubsub_topic,
+  #     subscription_path=known_args.pubsub_subscription)
   return result
 
 
