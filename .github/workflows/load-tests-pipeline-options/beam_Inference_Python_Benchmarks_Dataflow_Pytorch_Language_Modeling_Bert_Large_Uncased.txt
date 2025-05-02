@@ -27,7 +27,7 @@
 --metrics_table=torch_language_modeling_bert_large_uncased
 --input_options={}
 --influx_measurement=torch_language_modeling_bert_large_uncased
---device=CPU
+--device=GPU
 --input_file=gs://apache-beam-ml/testing/inputs/sentences_50k.txt
 --bert_tokenizer=bert-large-uncased
 --model_state_dict_path=gs://apache-beam-ml/models/huggingface.BertForMaskedLM.bert-large-uncased.pth

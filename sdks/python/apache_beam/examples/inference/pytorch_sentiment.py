@@ -173,14 +173,16 @@ def cleanup_pubsub_resources(
     print(f"Failed to delete topic: {e}")
 
 
+def override_or_add(args, flag, value):
+  if flag in args:
+    idx = args.index(flag)
+    args[idx + 1] = str(value)
+  else:
+    args.extend([flag, str(value)])
+
+
 def run_load_pipeline(known_args, pipeline_args):
   """Load data pipeline: read lines from GCS file and send to Pub/Sub."""
-  def override_or_add(args, flag, value):
-    if flag in args:
-      idx = args.index(flag)
-      args[idx + 1] = str(value)
-    else:
-      args.extend([flag, str(value)])
 
   override_or_add(pipeline_args, '--device', 'CPU')
   override_or_add(pipeline_args, '--num_workers', '5')
@@ -221,9 +223,13 @@ def run(
   if known_args.mode == 'streaming':
     threading.Thread(
         target=lambda: (
-            time.sleep(700), run_load_pipeline(known_args, pipeline_args)),
+            time.sleep(800), run_load_pipeline(known_args, pipeline_args)),
         daemon=True
     ).start()
+    override_or_add(pipeline_args, '--metrics_table', "torch_language_modeling_bert_large_uncased_streaming")
+  else:
+    override_or_add(pipeline_args, '--metrics_table', "torch_language_modeling_bert_large_uncased_batch")
+
 
   pipeline_options = PipelineOptions(pipeline_args)
   pipeline_options.view_as(SetupOptions).save_main_session = save_main_session
@@ -237,7 +243,7 @@ def run(
       model_class=DistilBertForSequenceClassification,
       model_params={'config': DistilBertConfig(num_labels=2)},
       state_dict_path=known_args.model_state_dict_path,
-      device='CPU')
+      device='GPU')
 
   tokenizer = DistilBertTokenizerFast.from_pretrained(known_args.model_path)
 
@@ -277,10 +283,10 @@ def run(
   result.wait_until_finish(duration=1800000)  # 30 min
   result.cancel()
 
-  # cleanup_pubsub_resources(
-  #     project=known_args.project,
-  #     topic_path=known_args.pubsub_topic,
-  #     subscription_path=known_args.pubsub_subscription)
+  cleanup_pubsub_resources(
+      project=known_args.project,
+      topic_path=known_args.pubsub_topic,
+      subscription_path=known_args.pubsub_subscription)
   return result
 
 
