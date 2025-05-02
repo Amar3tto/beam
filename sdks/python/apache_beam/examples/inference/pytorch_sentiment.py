@@ -223,7 +223,7 @@ def run(
   if known_args.mode == 'streaming':
     threading.Thread(
         target=lambda: (
-            time.sleep(800), run_load_pipeline(known_args, pipeline_args)),
+            time.sleep(100), run_load_pipeline(known_args, pipeline_args)),
         daemon=True
     ).start()
     override_or_add(pipeline_args, '--metrics_table', "torch_language_modeling_bert_large_uncased_streaming")
