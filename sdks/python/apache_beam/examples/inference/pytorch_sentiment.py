@@ -226,9 +226,8 @@ def run(
             time.sleep(100), run_load_pipeline(known_args, pipeline_args)),
         daemon=True
     ).start()
-    override_or_add(pipeline_args, '--metrics_table', "torch_language_modeling_bert_large_uncased_streaming")
   else:
-    override_or_add(pipeline_args, '--metrics_table', "torch_language_modeling_bert_large_uncased_batch")
+    override_or_add(pipeline_args, '--metrics_table', "torch_sentiment_distilbert_base_uncased_batch")
 
 
   pipeline_options = PipelineOptions(pipeline_args)
