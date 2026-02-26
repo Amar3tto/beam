@@ -156,7 +156,9 @@ class DataflowRunner(PipelineRunner):
             state_update_callback(response.currentState)
           _LOGGER.info('Job %s is in state %s', job_id, response.currentState)
           last_job_state = response.currentState
-        if str(response.currentState) != 'JOB_STATE_RUNNING':
+        if str(response.currentState) not in ('JOB_STATE_RUNNING',
+                                              'JOB_STATE_PAUSED',
+                                              'JOB_STATE_PAUSING'):
           # Stop checking for new messages on timeout, explanatory
           # message received, success, or a terminal job state caused
           # by the user that therefore doesn't require explanation.
@@ -303,8 +305,8 @@ class DataflowRunner(PipelineRunner):
   @staticmethod
   def combinefn_visitor():
     # Imported here to avoid circular dependencies.
-    from apache_beam.pipeline import PipelineVisitor
     from apache_beam import core
+    from apache_beam.pipeline import PipelineVisitor
 
     class CombineFnVisitor(PipelineVisitor):
       """Checks if `CombineFn` has non-default setup or teardown methods.
@@ -380,8 +382,7 @@ class DataflowRunner(PipelineRunner):
 
       # Apply DataflowRunner-specific overrides (e.g., streaming PubSub
       # optimizations)
-      from apache_beam.runners.dataflow.ptransform_overrides import (
-          get_dataflow_transform_overrides)
+      from apache_beam.runners.dataflow.ptransform_overrides import get_dataflow_transform_overrides
       dataflow_overrides = get_dataflow_transform_overrides(options)
       if dataflow_overrides:
         pipeline.replace_all(dataflow_overrides)
@@ -602,8 +603,15 @@ def _check_and_add_missing_options(options):
   debug_options = options.view_as(DebugOptions)
   dataflow_service_options = options.view_as(
       GoogleCloudOptions).dataflow_service_options or []
-  options.view_as(
-      GoogleCloudOptions).dataflow_service_options = dataflow_service_options
+
+  # Add use_gbek to dataflow_service_options if gbek is set.
+  if options.view_as(SetupOptions).gbek:
+    if 'use_gbek' not in dataflow_service_options:
+      dataflow_service_options.append('use_gbek')
+  elif 'use_gbek' in dataflow_service_options:
+    raise ValueError(
+        'Do not set use_gbek directly, pass in the --gbek pipeline option '
+        'with a valid secret instead.')
 
   _add_runner_v2_missing_options(options)
 
@@ -613,6 +621,9 @@ def _check_and_add_missing_options(options):
     debug_options.add_experiment('enable_prime')
   elif debug_options.lookup_experiment('enable_prime'):
     dataflow_service_options.append('enable_prime')
+
+  options.view_as(
+      GoogleCloudOptions).dataflow_service_options = dataflow_service_options
 
   sdk_location = options.view_as(SetupOptions).sdk_location
   if 'dev' in beam.version.__version__ and sdk_location == 'default':
@@ -742,6 +753,8 @@ class DataflowPipelineResult(PipelineResult):
             values_enum.JOB_STATE_CANCELLING: PipelineState.CANCELLING,
             values_enum.JOB_STATE_RESOURCE_CLEANING_UP: PipelineState.
             RESOURCE_CLEANING_UP,
+            values_enum.JOB_STATE_PAUSING: PipelineState.PAUSING,
+            values_enum.JOB_STATE_PAUSED: PipelineState.PAUSED,
         })
 
     return (

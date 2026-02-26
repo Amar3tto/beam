@@ -52,6 +52,8 @@ public interface WindowedValue<T> {
   @Nullable
   Long getRecordOffset();
 
+  CausedByDrain causedByDrain();
+
   /**
    * A representation of each of the actual values represented by this compressed {@link
    * WindowedValue}, one per window.

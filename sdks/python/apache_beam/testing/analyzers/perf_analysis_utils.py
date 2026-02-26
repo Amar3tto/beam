@@ -28,11 +28,11 @@ from typing import Union
 import pandas as pd
 import yaml
 from google.api_core import exceptions
+from signal_processing_algorithms.energy_statistics.energy_statistics import e_divisive
 
 from apache_beam.testing.analyzers import constants
 from apache_beam.testing.load_tests import load_test_metrics_utils
 from apache_beam.testing.load_tests.load_test_metrics_utils import BigQueryMetricsPublisher
-from signal_processing_algorithms.energy_statistics.energy_statistics import e_divisive
 
 # pylint: disable=ungrouped-imports
 try:
@@ -304,7 +304,6 @@ def filter_change_points_by_median_threshold(
   value of threshold is 0.05.
   """
   valid_change_points = []
-  epsilon = 1e-10  # needed to avoid division by zero.
 
   for idx in change_points:
     if idx == 0 or idx == len(data):
@@ -331,11 +330,6 @@ def filter_change_points_by_median_threshold(
                                         (left_mad + right_mad)):
       valid_change_points.append(idx)
       continue
-
-    relative_change = abs(right_value - left_value) / (left_value + epsilon)
-
-    if relative_change > threshold:
-      valid_change_points.append(idx)
   return valid_change_points
 
 

@@ -48,10 +48,10 @@ class BeamModulePluginProcessor:
   KNOWN_DEPS = {
       "arrow": "org.apache.arrow:arrow-memory-core",
       "gax": "com.google.api:gax",
-      "google_cloud_spanner": "com.google.cloud:google-cloud-spanner",
       "grpc":
           "io.grpc:grpc-netty",  # use "grpc-netty" to pick up proper netty version
       "netty": "io.netty:netty-transport",
+      "opentelemetry": "io.opentelemetry:opentelemetry-sdk",
       "protobuf": "com.google.protobuf:protobuf-java"
   }
   # dependencies managed by GCP-BOM that used the dependencies in KNOWN_DEPS

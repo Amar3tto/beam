@@ -32,9 +32,14 @@ from pymilvus import Hit
 from pymilvus import Hits
 from pymilvus import MilvusClient
 from pymilvus import SearchResult
+from pymilvus.exceptions import MilvusException
 
-from apache_beam.ml.rag.types import Chunk
+from apache_beam.ml.rag.types import EmbeddableItem
 from apache_beam.ml.rag.types import Embedding
+from apache_beam.ml.rag.utils import MilvusConnectionParameters
+from apache_beam.ml.rag.utils import MilvusHelpers
+from apache_beam.ml.rag.utils import retry_with_backoff
+from apache_beam.ml.rag.utils import unpack_dataclass_with_kwargs
 from apache_beam.transforms.enrichment import EnrichmentSourceHandler
 
 
@@ -102,37 +107,6 @@ class MilvusBaseRanker:
 
   def __str__(self):
     return self.dict().__str__()
-
-
-@dataclass
-class MilvusConnectionParameters:
-  """Parameters for establishing connections to Milvus servers.
-
-  Args:
-    uri: URI endpoint for connecting to Milvus server in the format
-      "http(s)://hostname:port".
-    user: Username for authentication. Required if authentication is enabled and
-      not using token authentication.
-    password: Password for authentication. Required if authentication is enabled
-      and not using token authentication.
-    db_id: Database ID to connect to. Specifies which Milvus database to use.
-      Defaults to 'default'.
-    token: Authentication token as an alternative to username/password.
-    timeout: Connection timeout in seconds. Uses client default if None.
-    kwargs: Optional keyword arguments for additional connection parameters.
-      Enables forward compatibility.
-  """
-  uri: str
-  user: str = field(default_factory=str)
-  password: str = field(default_factory=str)
-  db_id: str = "default"
-  token: str = field(default_factory=str)
-  timeout: Optional[float] = None
-  kwargs: Dict[str, Any] = field(default_factory=dict)
-
-  def __post_init__(self):
-    if not self.uri:
-      raise ValueError("URI must be provided for Milvus connection")
 
 
 @dataclass
@@ -305,7 +279,7 @@ class MilvusCollectionLoadParameters:
 
 @dataclass
 class MilvusSearchResult:
-  """Search result from Milvus per chunk.
+  """Search result from Milvus per embeddable_item.
 
   Args:
     id: List of entity IDs returned from the search. Can be either string or
@@ -319,7 +293,8 @@ class MilvusSearchResult:
   fields: List[Dict[str, Any]] = field(default_factory=list)
 
 
-InputT, OutputT = Union[Chunk, List[Chunk]], List[Tuple[Chunk, Dict[str, Any]]]
+InputT, OutputT = (Union[EmbeddableItem, List[EmbeddableItem]],
+                    List[Tuple[EmbeddableItem, Dict[str, Any]]])
 
 
 class MilvusSearchEnrichmentHandler(EnrichmentSourceHandler[InputT, OutputT]):
@@ -354,7 +329,7 @@ class MilvusSearchEnrichmentHandler(EnrichmentSourceHandler[InputT, OutputT]):
       **kwargs):
     """
     Example Usage:
-      connection_paramters = MilvusConnectionParameters(
+      connection_parameters = MilvusConnectionParameters(
         uri="http://localhost:19530")
       search_parameters = MilvusSearchParameters(
         collection_name="my_collection",
@@ -362,7 +337,7 @@ class MilvusSearchEnrichmentHandler(EnrichmentSourceHandler[InputT, OutputT]):
       collection_load_parameters = MilvusCollectionLoadParameters(
         load_fields=["embedding", "metadata"]),
       milvus_handler = MilvusSearchEnrichmentHandler(
-        connection_paramters,
+        connection_parameters,
         search_parameters,
         collection_load_parameters=collection_load_parameters,
         min_batch_size=10,
@@ -400,22 +375,49 @@ class MilvusSearchEnrichmentHandler(EnrichmentSourceHandler[InputT, OutputT]):
         'min_batch_size': min_batch_size, 'max_batch_size': max_batch_size
     }
     self.kwargs = kwargs
+    self._client = None
     self.join_fn = join_fn
     self.use_custom_types = True
 
   def __enter__(self):
-    connection_params = unpack_dataclass_with_kwargs(
-        self._connection_parameters)
-    collection_load_params = unpack_dataclass_with_kwargs(
-        self._collection_load_parameters)
-    self._client = MilvusClient(**connection_params)
-    self._client.load_collection(
-        collection_name=self.collection_name,
-        partition_names=self.partition_names,
-        **collection_load_params)
+    """Enters the context manager and establishes Milvus connection.
 
-  def __call__(self, request: Union[Chunk, List[Chunk]], *args,
-               **kwargs) -> List[Tuple[Chunk, Dict[str, Any]]]:
+    Returns:
+      Self, enabling use in 'with' statements.
+    """
+    if not self._client:
+      connection_params = unpack_dataclass_with_kwargs(
+          self._connection_parameters)
+      collection_load_params = unpack_dataclass_with_kwargs(
+          self._collection_load_parameters)
+
+      # Extract retry parameters from connection_params.
+      max_retries = connection_params.pop('max_retries', 3)
+      retry_delay = connection_params.pop('retry_delay', 1.0)
+      retry_backoff_factor = connection_params.pop('retry_backoff_factor', 2.0)
+
+      def connect_and_load():
+        client = MilvusClient(**connection_params)
+        client.load_collection(
+            collection_name=self.collection_name,
+            partition_names=self.partition_names,
+            **collection_load_params)
+        return client
+
+      self._client = retry_with_backoff(
+          connect_and_load,
+          max_retries=max_retries,
+          retry_delay=retry_delay,
+          retry_backoff_factor=retry_backoff_factor,
+          operation_name="Milvus connection and collection load",
+          exception_types=(MilvusException, ))
+    return self
+
+  def __call__(
+      self,
+      request: Union[EmbeddableItem, List[EmbeddableItem]],
+      *args,
+      **kwargs) -> List[Tuple[EmbeddableItem, Dict[str, Any]]]:
     reqs = request if isinstance(request, list) else [request]
     # Early return for empty requests to avoid unnecessary connection attempts
     if not reqs:
@@ -423,9 +425,9 @@ class MilvusSearchEnrichmentHandler(EnrichmentSourceHandler[InputT, OutputT]):
     search_result = self._search_documents(reqs)
     return self._get_call_response(reqs, search_result)
 
-  def _search_documents(self, chunks: List[Chunk]):
+  def _search_documents(self, embeddable_items: List[EmbeddableItem]):
     if isinstance(self.search_strategy, HybridSearchParameters):
-      data = self._get_hybrid_search_data(chunks)
+      data = self._get_hybrid_search_data(embeddable_items)
       return self._client.hybrid_search(
           collection_name=self.collection_name,
           partition_names=self.partition_names,
@@ -437,7 +439,7 @@ class MilvusSearchEnrichmentHandler(EnrichmentSourceHandler[InputT, OutputT]):
           limit=self.search_strategy.limit,
           **self.search_strategy.kwargs)
     elif isinstance(self.search_strategy, VectorSearchParameters):
-      data = list(map(self._get_vector_search_data, chunks))
+      data = list(map(self._get_vector_search_data, embeddable_items))
       vector_search_params = unpack_dataclass_with_kwargs(self.search_strategy)
       return self._client.search(
           collection_name=self.collection_name,
@@ -448,7 +450,7 @@ class MilvusSearchEnrichmentHandler(EnrichmentSourceHandler[InputT, OutputT]):
           data=data,
           **vector_search_params)
     elif isinstance(self.search_strategy, KeywordSearchParameters):
-      data = list(map(self._get_keyword_search_data, chunks))
+      data = list(map(self._get_keyword_search_data, embeddable_items))
       keyword_search_params = unpack_dataclass_with_kwargs(self.search_strategy)
       return self._client.search(
           collection_name=self.collection_name,
@@ -462,9 +464,11 @@ class MilvusSearchEnrichmentHandler(EnrichmentSourceHandler[InputT, OutputT]):
       raise ValueError(
           f"Not supported search strategy yet: {self.search_strategy}")
 
-  def _get_hybrid_search_data(self, chunks: List[Chunk]):
-    vector_search_data = list(map(self._get_vector_search_data, chunks))
-    keyword_search_data = list(map(self._get_keyword_search_data, chunks))
+  def _get_hybrid_search_data(self, embeddable_items: List[EmbeddableItem]):
+    vector_search_data = list(
+        map(self._get_vector_search_data, embeddable_items))
+    keyword_search_data = list(
+        map(self._get_keyword_search_data, embeddable_items))
 
     vector_search_req = AnnSearchRequest(
         data=vector_search_data,
@@ -483,38 +487,40 @@ class MilvusSearchEnrichmentHandler(EnrichmentSourceHandler[InputT, OutputT]):
     reqs = [vector_search_req, keyword_search_req]
     return reqs
 
-  def _get_vector_search_data(self, chunk: Chunk):
-    if not chunk.dense_embedding:
+  def _get_vector_search_data(self, embeddable_item: EmbeddableItem):
+    if not embeddable_item.dense_embedding:
       raise ValueError(
-          f"Chunk {chunk.id} missing dense embedding required for vector search"
-      )
-    return chunk.dense_embedding
+          f"Item {embeddable_item.id} missing dense embedding required for"
+          " vector search")
+    return embeddable_item.dense_embedding
 
-  def _get_keyword_search_data(self, chunk: Chunk):
-    if not chunk.content.text and not chunk.sparse_embedding:
+  def _get_keyword_search_data(self, embeddable_item: EmbeddableItem):
+    has_no_text = not embeddable_item.content.text
+    has_no_sparse = not embeddable_item.sparse_embedding
+    if has_no_text and has_no_sparse:
       raise ValueError(
-          f"Chunk {chunk.id} missing both text content and sparse embedding "
-          "required for keyword search")
-
-    sparse_embedding = self.convert_sparse_embedding_to_milvus_format(
-        chunk.sparse_embedding)
-
-    return chunk.content.text or sparse_embedding
+          f"Item {embeddable_item.id} missing both text content and sparse "
+          "embedding required for keyword search")
+    sparse_embedding = MilvusHelpers.sparse_embedding(
+        embeddable_item.sparse_embedding)
+    return embeddable_item.content.text or sparse_embedding
 
   def _get_call_response(
-      self, chunks: List[Chunk], search_result: SearchResult[Hits]):
+      self,
+      embeddable_items: List[EmbeddableItem],
+      search_result: SearchResult[Hits]):
     response = []
-    for i in range(len(chunks)):
-      chunk = chunks[i]
+    for i in range(len(embeddable_items)):
+      embeddable_item = embeddable_items[i]
       hits: Hits = search_result[i]
       result = MilvusSearchResult()
-      for i in range(len(hits)):
-        hit: Hit = hits[i]
+      for j in range(len(hits)):
+        hit: Hit = hits[j]
         normalized_fields = self._normalize_milvus_fields(hit.fields)
         result.id.append(hit.id)
         result.distance.append(hit.distance)
         result.fields.append(normalized_fields)
-      response.append((chunk, result.__dict__))
+      response.append((embeddable_item, result.__dict__))
     return response
 
   def _normalize_milvus_fields(self, fields: Dict[str, Any]):
@@ -588,15 +594,3 @@ class MilvusSearchEnrichmentHandler(EnrichmentSourceHandler[InputT, OutputT]):
 def join_fn(left: Embedding, right: Dict[str, Any]) -> Embedding:
   left.metadata['enrichment_data'] = right
   return left
-
-
-def unpack_dataclass_with_kwargs(dataclass_instance):
-  # Create a copy of the dataclass's __dict__.
-  params_dict: dict = dataclass_instance.__dict__.copy()
-
-  # Extract the nested kwargs dictionary.
-  nested_kwargs = params_dict.pop('kwargs', {})
-
-  # Merge the dictionaries, with nested_kwargs taking precedence
-  # in case of duplicate keys.
-  return {**params_dict, **nested_kwargs}

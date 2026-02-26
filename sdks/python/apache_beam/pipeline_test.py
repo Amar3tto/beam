@@ -188,8 +188,8 @@ class PipelineTest(unittest.TestCase):
         pcoll = pipeline | 'label1' >> Create([1, 2, 3])
         assert_that(pcoll, equal_to([1, 2, 3]))
 
-        from apache_beam.internal import pickler
         from apache_beam.internal import dill_pickler
+        from apache_beam.internal import pickler
         self.assertIs(pickler.desired_pickle_lib, dill_pickler)
     mock_info.assert_any_call(
         'Runner defaulting to pickling library: %s.', 'dill')
@@ -1023,6 +1023,7 @@ class PipelineOptionsTest(unittest.TestCase):
     self.assertEqual({
         'from_dictionary',
         'get_all_options',
+        'is_compat_version_prior_to',
         'slices',
         'style',
         'view_as',
@@ -1038,6 +1039,7 @@ class PipelineOptionsTest(unittest.TestCase):
     self.assertEqual({
         'from_dictionary',
         'get_all_options',
+        'is_compat_version_prior_to',
         'style',
         'view_as',
         'display_data',
@@ -1646,9 +1648,10 @@ class RunnerApiTest(unittest.TestCase):
       all_applied_transforms[xform.full_label] = xform
       current_transforms.extend(xform.parts)
     xform = all_applied_transforms['Split Sales']
-    # Confirm that Split Sales correctly has two outputs as specified by
-    #  ParDo.with_outputs in ParentSalesSplitter.
-    assert len(xform.outputs) == 2
+    # Confirm that Split Sales correctly has three outputs: the main
+    # (untagged) output plus the two tagged outputs specified by
+    # ParDo.with_outputs in ParentSalesSplitter.
+    assert len(xform.outputs) == 3
 
 
 if __name__ == '__main__':

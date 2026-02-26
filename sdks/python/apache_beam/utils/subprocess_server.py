@@ -185,8 +185,20 @@ class SubprocessServer(object):
     try:
       process, endpoint = self.start_process()
       wait_secs = .1
-      channel_options = [("grpc.max_receive_message_length", -1),
-                         ("grpc.max_send_message_length", -1)]
+      channel_options = [
+          ("grpc.max_receive_message_length", -1),
+          ("grpc.max_send_message_length", -1),
+          # Default: 20000ms (20s), increased to 10 minutes for stability
+          ("grpc.keepalive_timeout_ms", 600_000),
+          # Default: 2, set to 0 to allow unlimited pings without data
+          ("grpc.http2.max_pings_without_data", 0),
+          # Default: False, set to True to allow keepalive pings when no calls
+          ("grpc.keepalive_permit_without_calls", True),
+          # Default: 2, set to 0 to allow unlimited ping strikes
+          ("grpc.http2.max_ping_strikes", 0),
+          # Default: 0 (disabled), enable socket reuse for better handling
+          ("grpc.so_reuseport", 1),
+      ]
       self._grpc_channel = grpc.insecure_channel(
           endpoint, options=channel_options)
       channel_ready = grpc.channel_ready_future(self._grpc_channel)
@@ -280,8 +292,10 @@ class SubprocessServer(object):
 class JavaJarServer(SubprocessServer):
 
   MAVEN_CENTRAL_REPOSITORY = 'https://repo.maven.apache.org/maven2'
-  MAVEN_STAGING_REPOSITORY = 'https://repository.apache.org/content/groups/staging'  # pylint: disable=line-too-long
-  GOOGLE_MAVEN_MIRROR = 'https://maven-central.storage-download.googleapis.com/maven2'  # pylint: disable=line-too-long
+  MAVEN_STAGING_REPOSITORY = (
+      'https://repository.apache.org/content/groups/staging')
+  GOOGLE_MAVEN_MIRROR = (
+      'https://maven-central.storage-download.googleapis.com/maven2')
   BEAM_GROUP_ID = 'org.apache.beam'
   JAR_CACHE = os.path.expanduser("~/.apache_beam/cache/jars")
 
@@ -431,6 +445,26 @@ class JavaJarServer(SubprocessServer):
       cached_jar_path (str): The local path where the jar should be cached.
       user_agent (str): The user agent to use when downloading.
     """
+    # Issue warning when downloading from public repositories
+    public_repos = [
+        cls.MAVEN_CENTRAL_REPOSITORY,
+        cls.GOOGLE_MAVEN_MIRROR,
+    ]
+
+    if any(download_url.startswith(repo) for repo in public_repos):
+      _LOGGER.warning(
+          "   WARNING: Apache Beam is downloading dependencies from a "
+          "public repository at runtime.\n"
+          "   This may pose security risks or cause instability due to "
+          "repository availability.\n"
+          "   URL: %s\n"
+          "   Destination: %s\n"
+          "   Consider pre-staging dependencies or using a private repository "
+          "mirror.\n"
+          "   For more information, see: "
+          "https://beam.apache.org/documentation/sdks/python-dependencies/",
+          download_url,
+          cached_jar_path)
     try:
       url_read = FileSystems.open(download_url)
     except ValueError:

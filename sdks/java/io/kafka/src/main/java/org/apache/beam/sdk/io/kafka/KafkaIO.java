@@ -35,6 +35,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -94,7 +95,7 @@ import org.apache.beam.sdk.transforms.splittabledofn.WatermarkEstimator;
 import org.apache.beam.sdk.transforms.splittabledofn.WatermarkEstimators.Manual;
 import org.apache.beam.sdk.transforms.splittabledofn.WatermarkEstimators.MonotonicallyIncreasing;
 import org.apache.beam.sdk.transforms.splittabledofn.WatermarkEstimators.WallTime;
-import org.apache.beam.sdk.transforms.windowing.GlobalWindow;
+import org.apache.beam.sdk.util.InstanceBuilder;
 import org.apache.beam.sdk.util.Preconditions;
 import org.apache.beam.sdk.util.construction.PTransformMatchers;
 import org.apache.beam.sdk.util.construction.ReplacementOutputs;
@@ -112,7 +113,6 @@ import org.apache.beam.vendor.guava.v32_1_2_jre.com.google.common.annotations.Vi
 import org.apache.beam.vendor.guava.v32_1_2_jre.com.google.common.base.Joiner;
 import org.apache.beam.vendor.guava.v32_1_2_jre.com.google.common.collect.ImmutableList;
 import org.apache.beam.vendor.guava.v32_1_2_jre.com.google.common.collect.ImmutableMap;
-import org.apache.beam.vendor.guava.v32_1_2_jre.com.google.common.collect.Lists;
 import org.apache.kafka.clients.CommonClientConfigs;
 import org.apache.kafka.clients.consumer.Consumer;
 import org.apache.kafka.clients.consumer.ConsumerConfig;
@@ -648,6 +648,8 @@ public class KafkaIO {
     return new AutoValue_KafkaIO_WriteRecords.Builder<K, V>()
         .setProducerConfig(WriteRecords.DEFAULT_PRODUCER_PROPERTIES)
         .setEOS(false)
+        .setEosTriggerNumElements(1) // keep default numElements
+        .setEosTriggerTimeout(null) // keep default trigger (timeout)
         .setNumShards(0)
         .setConsumerFactoryFn(KafkaIOUtils.KAFKA_CONSUMER_FACTORY_FN)
         .setBadRecordRouter(BadRecordRouter.THROWING_ROUTER)
@@ -932,6 +934,34 @@ public class KafkaIO {
           builder.setOffsetDeduplication(false);
           builder.setRedistributeByRecordKey(false);
         }
+
+        if (config.consumerFactoryFnClass != null) {
+          if (config.consumerFactoryFnClass.contains("KerberosConsumerFactoryFn")) {
+            try {
+              if (!config.consumerFactoryFnParams.containsKey("krb5Location")) {
+                throw new IllegalArgumentException(
+                    "The KerberosConsumerFactoryFn requires a location for the krb5.conf file. "
+                        + "Please provide either a GCS location or Google Secret Manager location for this file.");
+              }
+              String krb5Location = config.consumerFactoryFnParams.get("krb5Location");
+              builder.setConsumerFactoryFn(
+                  InstanceBuilder.ofType(
+                          new TypeDescriptor<
+                              SerializableFunction<
+                                  Map<String, Object>, Consumer<byte[], byte[]>>>() {})
+                      .fromClassName(config.consumerFactoryFnClass)
+                      .withArg(String.class, Objects.requireNonNull(krb5Location))
+                      .build());
+            } catch (Exception e) {
+              throw new RuntimeException(
+                  "Unable to construct FactoryFn "
+                      + config.consumerFactoryFnClass
+                      + ": "
+                      + e.getMessage(),
+                  e);
+            }
+          }
+        }
       }
 
       private static <T> Coder<T> resolveCoder(Class<Deserializer<T>> deserializer) {
@@ -1002,6 +1032,8 @@ public class KafkaIO {
         private Boolean offsetDeduplication;
         private Boolean redistributeByRecordKey;
         private Long dynamicReadPollIntervalSeconds;
+        private String consumerFactoryFnClass;
+        private Map<String, String> consumerFactoryFnParams;
 
         public void setConsumerConfig(Map<String, String> consumerConfig) {
           this.consumerConfig = consumerConfig;
@@ -1069,6 +1101,14 @@ public class KafkaIO {
 
         public void setDynamicReadPollIntervalSeconds(Long dynamicReadPollIntervalSeconds) {
           this.dynamicReadPollIntervalSeconds = dynamicReadPollIntervalSeconds;
+        }
+
+        public void setConsumerFactoryFnClass(String consumerFactoryFnClass) {
+          this.consumerFactoryFnClass = consumerFactoryFnClass;
+        }
+
+        public void setConsumerFactoryFnParams(Map<String, String> consumerFactoryFnParams) {
+          this.consumerFactoryFnParams = consumerFactoryFnParams;
         }
       }
     }
@@ -1779,6 +1819,13 @@ public class KafkaIO {
       return true;
     }
 
+    /** A {@link PTransformOverride} for runners to override redistributed Kafka Read transforms. */
+    @Internal
+    public static final PTransformOverride KAFKA_REDISTRIBUTE_OVERRIDE =
+        PTransformOverride.of(
+            KafkaReadWithRedistributeOverride.matcher(),
+            new KafkaReadWithRedistributeOverride.Factory<>());
+
     /**
      * A {@link PTransformOverride} for runners to swap {@link ReadFromKafkaViaSDF} to legacy Kafka
      * read if runners doesn't have a good support on executing unbounded Splittable DoFn.
@@ -2016,8 +2063,8 @@ public class KafkaIO {
         extends DoFn<KafkaRecord<K, V>, KafkaRecord<K, V>> {
 
       @ProcessElement
-      public void processElement(ProcessContext pc) {
-        KafkaRecord<K, V> element = pc.element();
+      public void processElement(
+          @Element KafkaRecord<K, V> element, OutputReceiver<KafkaRecord<K, V>> outputReceiver) {
         Long offset = null;
         String uniqueId = null;
         if (element != null) {
@@ -2025,13 +2072,7 @@ public class KafkaIO {
           uniqueId =
               (String.format("%s-%d-%d", element.getTopic(), element.getPartition(), offset));
         }
-        pc.outputWindowedValue(
-            element,
-            pc.timestamp(),
-            Lists.newArrayList(GlobalWindow.INSTANCE),
-            pc.pane(),
-            uniqueId,
-            offset);
+        outputReceiver.builder(element).setRecordId(uniqueId).setRecordOffset(offset).output();
       }
     }
 
@@ -3146,6 +3187,10 @@ public class KafkaIO {
     @Pure
     public abstract boolean isEOS();
 
+    public abstract int getEosTriggerNumElements();
+
+    public abstract @Nullable Duration getEosTriggerTimeout();
+
     @Pure
     public abstract @Nullable String getSinkGroupId();
 
@@ -3181,6 +3226,10 @@ public class KafkaIO {
           KafkaPublishTimestampFunction<ProducerRecord<K, V>> timestampFunction);
 
       abstract Builder<K, V> setEOS(boolean eosEnabled);
+
+      abstract Builder<K, V> setEosTriggerNumElements(int numElements);
+
+      abstract Builder<K, V> setEosTriggerTimeout(@Nullable Duration timeout);
 
       abstract Builder<K, V> setSinkGroupId(String sinkGroupId);
 
@@ -3327,6 +3376,15 @@ public class KafkaIO {
       checkArgument(numShards >= 1, "numShards should be >= 1");
       checkArgument(sinkGroupId != null, "sinkGroupId is required for exactly-once sink");
       return toBuilder().setEOS(true).setNumShards(numShards).setSinkGroupId(sinkGroupId).build();
+    }
+
+    public WriteRecords<K, V> withEOSTriggerConfig(int numElements, Duration timeout) {
+      checkArgument(numElements >= 1, "numElements should be >= 1");
+      checkArgument(timeout != null, "timeout is required for exactly-once sink");
+      return toBuilder()
+          .setEosTriggerNumElements(numElements)
+          .setEosTriggerTimeout(timeout)
+          .build();
     }
 
     /**
@@ -3612,6 +3670,19 @@ public class KafkaIO {
      */
     public Write<K, V> withEOS(int numShards, String sinkGroupId) {
       return withWriteRecordsTransform(getWriteRecordsTransform().withEOS(numShards, sinkGroupId));
+    }
+
+    /**
+     * Set the frequency and numElements threshold at which messages are triggered.
+     *
+     * <p>This is only applicable when the write method is set to EOS.
+     *
+     * <p>Every timeout duration, or numElements (repeated, after first condition is met) collection
+     * of elements written.
+     */
+    public Write<K, V> withEOSTriggerConfig(int numElements, Duration timeout) {
+      return withWriteRecordsTransform(
+          getWriteRecordsTransform().withEOSTriggerConfig(numElements, timeout));
     }
 
     /**

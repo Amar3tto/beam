@@ -78,6 +78,7 @@ from apache_beam.utils.timestamp import Duration
 
 if typing.TYPE_CHECKING:
   from google.protobuf import message  # pylint: disable=ungrouped-imports
+
   from apache_beam.io import iobase
   from apache_beam.pipeline import Pipeline
   from apache_beam.runners.pipeline_context import PipelineContext
@@ -823,6 +824,7 @@ class DoFn(WithTypeHints, HasDisplayData, urns.RunnerApiFn):
       process_type_hints = process_type_hints.strip_iterable()
     except ValueError as e:
       raise ValueError('Return value not iterable: %s: %s' % (self, e))
+    process_type_hints = process_type_hints.extract_tagged_outputs()
 
     # Prefer class decorator type hints for backwards compatibility.
     return get_type_hints(self.__class__).with_defaults(process_type_hints)
@@ -1038,6 +1040,7 @@ class CallableWrapperDoFn(DoFn):
       raise TypeCheckError(
           'Return value not iterable: %s: %s' %
           (self.display_data()['fn'].value, e))
+    type_hints = type_hints.extract_tagged_outputs()
     return type_hints
 
   def infer_output_type(self, input_type):
@@ -1507,25 +1510,29 @@ def _check_fn_use_yield_and_return(fn):
     source_code = _get_function_body_without_inners(fn)
     has_yield = False
     has_return = False
-    return_none_warning = (
-        "No iterator is returned by the process method in %s.",
-        fn.__self__.__class__)
+    has_return_none = False
     for line in source_code.split("\n"):
       lstripped_line = line.lstrip()
       if lstripped_line.startswith("yield ") or lstripped_line.startswith(
           "yield("):
         has_yield = True
-      if lstripped_line.startswith("return ") or lstripped_line.startswith(
+      elif lstripped_line.rstrip() == "return":
+        # Return is likely used to exit the function - ok to use with 'yield'.
+        pass
+      elif lstripped_line.startswith("return ") or lstripped_line.startswith(
           "return("):
+        if lstripped_line.rstrip() == "return None" or lstripped_line.rstrip(
+        ) == "return(None)":
+          has_return_none = True
         has_return = True
-        if lstripped_line.startswith(
-            "return None") or lstripped_line.rstrip() == "return":
-          _LOGGER.warning(return_none_warning)
       if has_yield and has_return:
         return True
 
-    if not has_yield and not has_return:
-      _LOGGER.warning(return_none_warning)
+    if has_return_none:
+      _LOGGER.warning(
+          "Process method returned None (element won't be emitted): %s."
+          " Check if intended.",
+          fn.__self__.__class__)
 
     return False
   except Exception as e:
@@ -1829,6 +1836,17 @@ class ParDo(PTransformWithSideInputs):
       raise ValueError(
           'Main output tag %r must be different from side output tags %r.' %
           (main, tags))
+    type_hints = self.get_type_hints()
+    declared_tags = set(type_hints.tagged_output_types().keys())
+    requested_tags = set(tags)
+
+    unknown = requested_tags - declared_tags
+    if unknown and declared_tags:  # Only warn if type hints exist
+      logging.warning(
+          "Tags %s requested in with_outputs() but not declared "
+          "in type hints. Declared tags: %s",
+          unknown,
+          declared_tags)
     return _MultiParDo(self, tags, main, allow_unknown_tags)
 
   def _do_fn_info(self):
@@ -2115,8 +2133,14 @@ def Map(fn, *args, **kwargs):  # pylint: disable=invalid-name
             wrapper)
   output_hint = type_hints.simple_output_type(label)
   if output_hint:
+    tagged = {
+        k: typehints.Iterable[v]
+        for k, v in type_hints.tagged_output_types().items()
+    }
     wrapper = with_output_types(
-        typehints.Iterable[_strip_output_annotations(output_hint)])(
+        typehints.Iterable[_strip_output_annotations(
+            output_hint, strip_tagged_output=False)],
+        **tagged)(
             wrapper)
   # pylint: disable=protected-access
   wrapper._argspec_fn = fn
@@ -2184,8 +2208,14 @@ def MapTuple(fn, *args, **kwargs):  # pylint: disable=invalid-name
     pass
   output_hint = type_hints.simple_output_type(label)
   if output_hint:
+    tagged = {
+        k: typehints.Iterable[v]
+        for k, v in type_hints.tagged_output_types().items()
+    }
     wrapper = with_output_types(
-        typehints.Iterable[_strip_output_annotations(output_hint)])(
+        typehints.Iterable[_strip_output_annotations(
+            output_hint, strip_tagged_output=False)],
+        **tagged)(
             wrapper)
 
   # Replace the first (args) component.
@@ -2256,7 +2286,10 @@ def FlatMapTuple(fn, *args, **kwargs):  # pylint: disable=invalid-name
     pass
   output_hint = type_hints.simple_output_type(label)
   if output_hint:
-    wrapper = with_output_types(_strip_output_annotations(output_hint))(wrapper)
+    wrapper = with_output_types(
+        _strip_output_annotations(output_hint, strip_tagged_output=False),
+        **type_hints.tagged_output_types())(
+            wrapper)
 
   # Replace the first (args) component.
   modified_arg_names = ['tuple_element'] + arg_names[-num_defaults:]
@@ -2439,7 +2472,8 @@ class _ExceptionHandlingWrapperDoFn(DoFn):
         try:
           self._on_failure_callback(exn, args[0])
         except Exception as e:
-          logging.warning('on_failure_callback failed with error: %s', e)
+          logging.warning(
+              'on_failure_callback failed with error: %s', e, exc_info=True)
       yield pvalue.TaggedOutput(
           self._dead_letter_tag,
           (
@@ -2675,7 +2709,8 @@ class _TimeoutDoFn(DoFn):
       self._pool = concurrent.futures.ThreadPoolExecutor(10)
 
     # Import here to avoid circular dependency
-    from apache_beam.runners.worker.statesampler import get_current_tracker, set_current_tracker
+    from apache_beam.runners.worker.statesampler import get_current_tracker
+    from apache_beam.runners.worker.statesampler import set_current_tracker
 
     # State sampler/tracker is stored as a thread local variable, and is used
     # when incrementing counter metrics.
@@ -3004,8 +3039,7 @@ class CombinePerKey(PTransformWithSideInputs):
       # If the CombineFn has deferred side inputs, the python SDK
       # doesn't implement it.
       # Use a ParDo-based CombinePerKey instead.
-      from apache_beam.transforms.combiners import \
-        LiftedCombinePerKey
+      from apache_beam.transforms.combiners import LiftedCombinePerKey
       combine_fn, *args = args
       return LiftedCombinePerKey(combine_fn, args, kwargs)
     return super(CombinePerKey, cls).__new__(cls)
@@ -3267,7 +3301,7 @@ class _CombinePerKeyWithHotKeyFanout(PTransform):
         try:
           self._combine_fn_copy = copy.deepcopy(combine_fn)
         except Exception:
-          self._combine_fn_copy = pickler.loads(pickler.dumps(combine_fn))
+          self._combine_fn_copy = pickler.roundtrip(combine_fn)
 
         self.setup = self._combine_fn_copy.setup
         self.create_accumulator = self._combine_fn_copy.create_accumulator
@@ -3288,7 +3322,7 @@ class _CombinePerKeyWithHotKeyFanout(PTransform):
         try:
           self._combine_fn_copy = copy.deepcopy(combine_fn)
         except Exception:
-          self._combine_fn_copy = pickler.loads(pickler.dumps(combine_fn))
+          self._combine_fn_copy = pickler.roundtrip(combine_fn)
 
         self.setup = self._combine_fn_copy.setup
         self.create_accumulator = self._combine_fn_copy.create_accumulator
@@ -3760,7 +3794,9 @@ class Windowing(object):
     """
     global AccumulationMode, DefaultTrigger  # pylint: disable=global-variable-not-assigned
     # pylint: disable=wrong-import-order, wrong-import-position
-    from apache_beam.transforms.trigger import AccumulationMode, DefaultTrigger
+    from apache_beam.transforms.trigger import AccumulationMode
+    from apache_beam.transforms.trigger import DefaultTrigger
+
     # pylint: enable=wrong-import-order, wrong-import-position
     if triggerfn is None:
       triggerfn = DefaultTrigger()
@@ -4214,12 +4250,15 @@ class Impulse(PTransform):
     return Impulse()
 
 
-def _strip_output_annotations(type_hint):
+def _strip_output_annotations(type_hint, strip_tagged_output=True):
   # TODO(robertwb): These should be parameterized types that the
   # type inferencer understands.
   # Then we can replace them with the correct element types instead of
   # using Any. Refer to typehints.WindowedValue when doing this.
-  annotations = (TimestampedValue, WindowedValue, pvalue.TaggedOutput)
+  annotations = [TimestampedValue, WindowedValue]
+  if strip_tagged_output:
+    annotations.append(pvalue.TaggedOutput)
+  annotations = tuple(annotations)
 
   contains_annotation = False
 

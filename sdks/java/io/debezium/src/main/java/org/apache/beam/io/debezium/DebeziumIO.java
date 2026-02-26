@@ -142,6 +142,8 @@ public class DebeziumIO {
 
     abstract @Nullable Long getMaxTimeToRun();
 
+    abstract @Nullable Long getPollingTimeout();
+
     abstract @Nullable Coder<T> getCoder();
 
     abstract Builder<T> toBuilder();
@@ -157,6 +159,8 @@ public class DebeziumIO {
       abstract Builder<T> setMaxNumberOfRecords(Integer maxNumberOfRecords);
 
       abstract Builder<T> setMaxTimeToRun(Long miliseconds);
+
+      abstract Builder<T> setPollingTimeout(Long miliseconds);
 
       abstract Read<T> build();
     }
@@ -217,12 +221,18 @@ public class DebeziumIO {
       return toBuilder().setMaxTimeToRun(miliseconds).build();
     }
 
+    /**
+     * Sets the timeout in milliseconds for consumer polling request in the {@link
+     * KafkaSourceConsumerFn}. A lower timeout optimizes for latency. Increase the timeout if the
+     * consumer is not fetching any records. The default is 1000 milliseconds.
+     */
+    public Read<T> withPollingTimeout(Long miliseconds) {
+      return toBuilder().setPollingTimeout(miliseconds).build();
+    }
+
     protected Schema getRecordSchema() {
       KafkaSourceConsumerFn<T> fn =
-          new KafkaSourceConsumerFn<>(
-              getConnectorConfiguration().getConnectorClass().get(),
-              getFormatFunction(),
-              getMaxNumberOfRecords());
+          new KafkaSourceConsumerFn<>(getConnectorConfiguration().getConnectorClass().get(), this);
       fn.register(
           new KafkaSourceConsumerFn.OffsetTracker(
               new KafkaSourceConsumerFn.OffsetHolder(null, null, 0)));
@@ -262,10 +272,7 @@ public class DebeziumIO {
           .apply(
               ParDo.of(
                   new KafkaSourceConsumerFn<>(
-                      getConnectorConfiguration().getConnectorClass().get(),
-                      getFormatFunction(),
-                      getMaxNumberOfRecords(),
-                      getMaxTimeToRun())))
+                      getConnectorConfiguration().getConnectorClass().get(), this)))
           .setCoder(getCoder());
     }
   }

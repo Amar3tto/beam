@@ -42,6 +42,7 @@ from apache_beam.runners.dataflow.dataflow_runner import DataflowRuntimeExceptio
 from apache_beam.runners.dataflow.dataflow_runner import _check_and_add_missing_options
 from apache_beam.runners.dataflow.dataflow_runner import _check_and_add_missing_streaming_options
 from apache_beam.runners.dataflow.internal.clients import dataflow as dataflow_api
+from apache_beam.runners.internal import names
 from apache_beam.runners.runner import PipelineState
 from apache_beam.testing.extra_assertions import ExtraAssertionsMixin
 from apache_beam.testing.test_pipeline import TestPipeline
@@ -194,6 +195,22 @@ class DataflowRunnerTest(unittest.TestCase, ExtraAssertionsMixin):
       result = duration_timedout_result.wait_until_finish(5000)
       self.assertEqual(result, PipelineState.RUNNING)
 
+    with mock.patch('time.time', mock.MagicMock(side_effect=[1, 9, 9, 20, 20])):
+      duration_timedout_runner = MockDataflowRunner(
+          [values_enum.JOB_STATE_PAUSING])
+      duration_timedout_result = DataflowPipelineResult(
+          duration_timedout_runner.job, duration_timedout_runner, options)
+      result = duration_timedout_result.wait_until_finish(5000)
+      self.assertEqual(result, PipelineState.PAUSING)
+
+    with mock.patch('time.time', mock.MagicMock(side_effect=[1, 9, 9, 20, 20])):
+      duration_timedout_runner = MockDataflowRunner(
+          [values_enum.JOB_STATE_PAUSED])
+      duration_timedout_result = DataflowPipelineResult(
+          duration_timedout_runner.job, duration_timedout_runner, options)
+      result = duration_timedout_result.wait_until_finish(5000)
+      self.assertEqual(result, PipelineState.PAUSED)
+
     with mock.patch('time.time', mock.MagicMock(side_effect=[1, 1, 2, 2, 3])):
       with self.assertRaisesRegex(DataflowRuntimeException,
                                   'Dataflow pipeline failed. State: CANCELLED'):
@@ -238,10 +255,48 @@ class DataflowRunnerTest(unittest.TestCase, ExtraAssertionsMixin):
         terminal_runner.job, terminal_runner, options)
     terminal_result.cancel()
 
+  def test_api_jobstate_to_pipeline_state(self):
+    values_enum = dataflow_api.Job.CurrentStateValueValuesEnum
+    expected_mappings = [
+        (values_enum.JOB_STATE_UNKNOWN, PipelineState.UNKNOWN),
+        (values_enum.JOB_STATE_STOPPED, PipelineState.STOPPED),
+        (values_enum.JOB_STATE_RUNNING, PipelineState.RUNNING),
+        (values_enum.JOB_STATE_DONE, PipelineState.DONE),
+        (values_enum.JOB_STATE_FAILED, PipelineState.FAILED),
+        (values_enum.JOB_STATE_CANCELLED, PipelineState.CANCELLED),
+        (values_enum.JOB_STATE_UPDATED, PipelineState.UPDATED),
+        (values_enum.JOB_STATE_DRAINING, PipelineState.DRAINING),
+        (values_enum.JOB_STATE_DRAINED, PipelineState.DRAINED),
+        (values_enum.JOB_STATE_PENDING, PipelineState.PENDING),
+        (values_enum.JOB_STATE_CANCELLING, PipelineState.CANCELLING),
+        (
+            values_enum.JOB_STATE_RESOURCE_CLEANING_UP,
+            PipelineState.RESOURCE_CLEANING_UP),
+        (values_enum.JOB_STATE_PAUSING, PipelineState.PAUSING),
+        (values_enum.JOB_STATE_PAUSED, PipelineState.PAUSED),
+    ]
+
+    for api_state, pipeline_state in expected_mappings:
+      self.assertEqual(
+          DataflowPipelineResult.api_jobstate_to_pipeline_state(api_state),
+          pipeline_state)
+
   def test_create_runner(self):
     self.assertTrue(isinstance(create_runner('DataflowRunner'), DataflowRunner))
     self.assertTrue(
         isinstance(create_runner('TestDataflowRunner'), TestDataflowRunner))
+
+  @staticmethod
+  def dependency_proto_from_main_session_file(serialized_path):
+    return [
+        beam_runner_api_pb2.ArtifactInformation(
+            type_urn=common_urns.artifact_types.FILE.urn,
+            type_payload=serialized_path,
+            role_urn=common_urns.artifact_roles.STAGING_TO.urn,
+            role_payload=beam_runner_api_pb2.ArtifactStagingToRolePayload(
+                staged_name=names.PICKLED_MAIN_SESSION_FILE).SerializeToString(
+                ))
+    ]
 
   def test_environment_override_translation_legacy_worker_harness_image(self):
     self.default_properties.append('--experiments=beam_fn_api')
@@ -256,17 +311,22 @@ class DataflowRunnerTest(unittest.TestCase, ExtraAssertionsMixin):
           | 'Do' >> ptransform.FlatMap(lambda x: [(x, x)])
           | ptransform.GroupByKey())
 
+    actual = list(remote_runner.proto_pipeline.components.environments.values())
+    self.assertEqual(len(actual), 1)
+    actual = actual[0]
+    file_path = actual.dependencies[0].type_payload
+    # Dependency payload contains main_session from a transient temp directory
+    # Use actual for expected value.
+    main_session_dep = self.dependency_proto_from_main_session_file(file_path)
     self.assertEqual(
-        list(remote_runner.proto_pipeline.components.environments.values()),
-        [
-            beam_runner_api_pb2.Environment(
-                urn=common_urns.environments.DOCKER.urn,
-                payload=beam_runner_api_pb2.DockerPayload(
-                    container_image='LEGACY').SerializeToString(),
-                capabilities=environments.python_sdk_docker_capabilities(),
-                dependencies=environments.python_sdk_dependencies(
-                    options=options))
-        ])
+        actual,
+        beam_runner_api_pb2.Environment(
+            urn=common_urns.environments.DOCKER.urn,
+            payload=beam_runner_api_pb2.DockerPayload(
+                container_image='LEGACY').SerializeToString(),
+            capabilities=environments.python_sdk_docker_capabilities(),
+            dependencies=environments.python_sdk_dependencies(options=options) +
+            main_session_dep))
 
   def test_environment_override_translation_sdk_container_image(self):
     self.default_properties.append('--experiments=beam_fn_api')
@@ -281,17 +341,22 @@ class DataflowRunnerTest(unittest.TestCase, ExtraAssertionsMixin):
           | 'Do' >> ptransform.FlatMap(lambda x: [(x, x)])
           | ptransform.GroupByKey())
 
+    actual = list(remote_runner.proto_pipeline.components.environments.values())
+    self.assertEqual(len(actual), 1)
+    actual = actual[0]
+    file_path = actual.dependencies[0].type_payload
+    # Dependency payload contains main_session from a transient temp directory
+    # Use actual for expected value.
+    main_session_dep = self.dependency_proto_from_main_session_file(file_path)
     self.assertEqual(
-        list(remote_runner.proto_pipeline.components.environments.values()),
-        [
-            beam_runner_api_pb2.Environment(
-                urn=common_urns.environments.DOCKER.urn,
-                payload=beam_runner_api_pb2.DockerPayload(
-                    container_image='FOO').SerializeToString(),
-                capabilities=environments.python_sdk_docker_capabilities(),
-                dependencies=environments.python_sdk_dependencies(
-                    options=options))
-        ])
+        actual,
+        beam_runner_api_pb2.Environment(
+            urn=common_urns.environments.DOCKER.urn,
+            payload=beam_runner_api_pb2.DockerPayload(
+                container_image='FOO').SerializeToString(),
+            capabilities=environments.python_sdk_docker_capabilities(),
+            dependencies=environments.python_sdk_dependencies(options=options) +
+            main_session_dep))
 
   def test_remote_runner_translation(self):
     remote_runner = DataflowRunner()

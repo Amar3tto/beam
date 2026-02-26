@@ -28,7 +28,6 @@ import logging
 import math
 import random
 import re
-import string
 import time
 import unittest
 import warnings
@@ -72,6 +71,7 @@ from apache_beam.transforms import window
 from apache_beam.transforms.core import FlatMapTuple
 from apache_beam.transforms.trigger import AfterCount
 from apache_beam.transforms.trigger import Repeatedly
+from apache_beam.transforms.util import GcpHsmGeneratedSecret
 from apache_beam.transforms.util import GcpSecret
 from apache_beam.transforms.util import Secret
 from apache_beam.transforms.window import FixedWindows
@@ -91,11 +91,6 @@ from apache_beam.utils.windowed_value import PANE_INFO_UNKNOWN
 from apache_beam.utils.windowed_value import PaneInfo
 from apache_beam.utils.windowed_value import PaneInfoTiming
 from apache_beam.utils.windowed_value import WindowedValue
-
-try:
-  import dill
-except ImportError:
-  dill = None
 
 try:
   from google.cloud import secretmanager
@@ -129,13 +124,6 @@ class _UnpicklableCoder(beam.coders.Coder):
 
   def is_deterministic(self):
     return True
-
-
-def maybe_skip(compat_version):
-  if compat_version and not dill:
-    raise unittest.SkipTest(
-        'Dill dependency not installed which is required for compat_version'
-        ' <= 2.67.0')
 
 
 class CoGroupByKeyTest(unittest.TestCase):
@@ -328,41 +316,37 @@ class SecretTest(unittest.TestCase):
 
 
 class GroupByEncryptedKeyTest(unittest.TestCase):
-  def setUp(self):
+  @classmethod
+  def setUpClass(cls):
     if secretmanager is not None:
-      self.project_id = 'apache-beam-testing'
-      secret_postfix = ''.join(random.choice(string.digits) for _ in range(6))
-      self.secret_id = 'gbek_secret_tests_' + secret_postfix
-      self.client = secretmanager.SecretManagerServiceClient()
-      self.project_path = f'projects/{self.project_id}'
-      self.secret_path = f'{self.project_path}/secrets/{self.secret_id}'
+      cls.project_id = 'apache-beam-testing'
+      cls.secret_id = 'gbek_util_secret_tests'
+      cls.client = secretmanager.SecretManagerServiceClient()
+      cls.project_path = f'projects/{cls.project_id}'
+      cls.secret_path = f'{cls.project_path}/secrets/{cls.secret_id}'
       try:
-        self.client.get_secret(request={'name': self.secret_path})
+        cls.client.get_secret(request={'name': cls.secret_path})
       except Exception:
-        self.client.create_secret(
+        cls.client.create_secret(
             request={
-                'parent': self.project_path,
-                'secret_id': self.secret_id,
+                'parent': cls.project_path,
+                'secret_id': cls.secret_id,
                 'secret': {
                     'replication': {
                         'automatic': {}
                     }
                 }
             })
-        self.client.add_secret_version(
+        cls.client.add_secret_version(
             request={
-                'parent': self.secret_path,
+                'parent': cls.secret_path,
                 'payload': {
                     'data': Secret.generate_secret_bytes()
                 }
             })
-      version_name = f'{self.secret_path}/versions/latest'
-      self.gcp_secret = GcpSecret(version_name)
-      self.secret_option = f'type:GcpSecret;version_name:{version_name}'
-
-  def tearDown(self):
-    if secretmanager is not None:
-      self.client.delete_secret(request={'name': self.secret_path})
+      version_name = f'{cls.secret_path}/versions/latest'
+      cls.gcp_secret = GcpSecret(version_name)
+      cls.secret_option = f'type:GcpSecret;version_name:{version_name}'
 
   def test_gbek_fake_secret_manager_roundtrips(self):
     fakeSecret = FakeSecret()
@@ -446,6 +430,124 @@ class GroupByEncryptedKeyTest(unittest.TestCase):
         result = (pcoll_1) | beam.GroupByEncryptedKey(gcp_secret)
         assert_that(
             result, equal_to([('a', ([1, 2])), ('b', ([3])), ('c', ([4]))]))
+
+
+@unittest.skipIf(secretmanager is None, 'GCP dependencies are not installed')
+class GcpHsmGeneratedSecretTest(unittest.TestCase):
+  def setUp(self):
+    self.mock_secret_manager_client = mock.MagicMock()
+    self.mock_kms_client = mock.MagicMock()
+
+    # Patch the clients
+    self.secretmanager_patcher = mock.patch(
+        'google.cloud.secretmanager.SecretManagerServiceClient',
+        return_value=self.mock_secret_manager_client)
+    self.kms_patcher = mock.patch(
+        'google.cloud.kms.KeyManagementServiceClient',
+        return_value=self.mock_kms_client)
+    self.os_urandom_patcher = mock.patch('os.urandom', return_value=b'0' * 32)
+    self.hkdf_patcher = mock.patch(
+        'cryptography.hazmat.primitives.kdf.hkdf.HKDF.derive',
+        return_value=b'derived_key')
+
+    self.secretmanager_patcher.start()
+    self.kms_patcher.start()
+    self.os_urandom_patcher.start()
+    self.hkdf_patcher.start()
+
+  def tearDown(self):
+    self.secretmanager_patcher.stop()
+    self.kms_patcher.stop()
+    self.os_urandom_patcher.stop()
+    self.hkdf_patcher.stop()
+
+  def test_happy_path_secret_creation(self):
+    from google.api_core import exceptions as api_exceptions
+
+    project_id = 'test-project'
+    location_id = 'global'
+    key_ring_id = 'test-key-ring'
+    key_id = 'test-key'
+    job_name = 'test-job'
+
+    secret = GcpHsmGeneratedSecret(
+        project_id, location_id, key_ring_id, key_id, job_name)
+
+    # Mock responses for secret creation path
+    self.mock_secret_manager_client.access_secret_version.side_effect = [
+        api_exceptions.NotFound('not found'),  # first check
+        api_exceptions.NotFound('not found'),  # second check
+        mock.MagicMock(payload=mock.MagicMock(data=b'derived_key'))
+    ]
+    self.mock_kms_client.encrypt.return_value = mock.MagicMock(
+        ciphertext=b'encrypted_nonce')
+
+    secret_bytes = secret.get_secret_bytes()
+    self.assertEqual(secret_bytes, b'derived_key')
+
+    # Assertions on mocks
+    secret_version_path = (
+        f'projects/{project_id}/secrets/{secret._secret_version_name}'
+        '/versions/1')
+    self.mock_secret_manager_client.access_secret_version.assert_any_call(
+        request={'name': secret_version_path})
+    self.assertEqual(
+        self.mock_secret_manager_client.access_secret_version.call_count, 3)
+    self.mock_secret_manager_client.create_secret.assert_called_once()
+    self.mock_kms_client.encrypt.assert_called_once()
+    self.mock_secret_manager_client.add_secret_version.assert_called_once()
+
+  def test_secret_already_exists(self):
+    from google.api_core import exceptions as api_exceptions
+
+    project_id = 'test-project'
+    location_id = 'global'
+    key_ring_id = 'test-key-ring'
+    key_id = 'test-key'
+    job_name = 'test-job'
+
+    secret = GcpHsmGeneratedSecret(
+        project_id, location_id, key_ring_id, key_id, job_name)
+
+    # Mock responses for secret creation path
+    self.mock_secret_manager_client.access_secret_version.side_effect = [
+        api_exceptions.NotFound('not found'),
+        api_exceptions.NotFound('not found'),
+        mock.MagicMock(payload=mock.MagicMock(data=b'derived_key'))
+    ]
+    self.mock_secret_manager_client.create_secret.side_effect = (
+        api_exceptions.AlreadyExists('exists'))
+    self.mock_kms_client.encrypt.return_value = mock.MagicMock(
+        ciphertext=b'encrypted_nonce')
+
+    secret_bytes = secret.get_secret_bytes()
+    self.assertEqual(secret_bytes, b'derived_key')
+
+    # Assertions on mocks
+    self.mock_secret_manager_client.create_secret.assert_called_once()
+    self.mock_secret_manager_client.add_secret_version.assert_called_once()
+
+  def test_secret_version_already_exists(self):
+    project_id = 'test-project'
+    location_id = 'global'
+    key_ring_id = 'test-key-ring'
+    key_id = 'test-key'
+    job_name = 'test-job'
+
+    secret = GcpHsmGeneratedSecret(
+        project_id, location_id, key_ring_id, key_id, job_name)
+
+    self.mock_secret_manager_client.access_secret_version.return_value = (
+        mock.MagicMock(payload=mock.MagicMock(data=b'existing_dek')))
+
+    secret_bytes = secret.get_secret_bytes()
+    self.assertEqual(secret_bytes, b'existing_dek')
+
+    # Assertions
+    self.mock_secret_manager_client.access_secret_version.assert_called_once()
+    self.mock_secret_manager_client.create_secret.assert_not_called()
+    self.mock_secret_manager_client.add_secret_version.assert_not_called()
+    self.mock_kms_client.encrypt.assert_not_called()
 
 
 class FakeClock(object):
@@ -1219,10 +1321,11 @@ class ReshuffleTest(unittest.TestCase):
       param(compat_version=None),
       param(compat_version="2.64.0"),
   ])
-  @pytest.mark.uses_dill
-  def test_reshuffle_custom_window_preserves_metadata(self, compat_version):
+  @mock.patch(
+      'apache_beam.coders.coders._should_force_use_dill', return_value=True)
+  def test_reshuffle_custom_window_preserves_metadata(
+      self, mock_force_dill, compat_version):
     """Tests that Reshuffle preserves pane info."""
-    maybe_skip(compat_version)
     element_count = 12
     timestamp_value = timestamp.Timestamp(0)
     l = [
@@ -1286,7 +1389,6 @@ class ReshuffleTest(unittest.TestCase):
                           expected_timestamp, [GlobalWindow()],
                           PANE_INFO_UNKNOWN)
     ])
-
     options = PipelineOptions(update_compatibility_version=compat_version)
     options.view_as(StandardOptions).streaming = True
 
@@ -1322,11 +1424,12 @@ class ReshuffleTest(unittest.TestCase):
       param(compat_version=None),
       param(compat_version="2.64.0"),
   ])
-  @pytest.mark.uses_dill
-  def test_reshuffle_default_window_preserves_metadata(self, compat_version):
+  @mock.patch(
+      'apache_beam.coders.coders._should_force_use_dill', return_value=True)
+  def test_reshuffle_default_window_preserves_metadata(
+      self, mock_force_dill, compat_version):
     """Tests that Reshuffle preserves timestamp, window, and pane info
     metadata."""
-    maybe_skip(compat_version)
     no_firing = PaneInfo(
         is_first=True,
         is_last=True,
@@ -2416,68 +2519,6 @@ class WaitOnTest(unittest.TestCase):
           result,
           equal_to([(None, 'result', 6), (None, 'result', 7)]),
           label='result')
-
-
-class CompatCheckTest(unittest.TestCase):
-  def test_is_v1_prior_to_v2(self):
-    test_cases = [
-        # Basic comparison cases
-        ("1.0.0", "2.0.0", True),  # v1 < v2 in major
-        ("2.0.0", "1.0.0", False),  # v1 > v2 in major
-        ("1.1.0", "1.2.0", True),  # v1 < v2 in minor
-        ("1.2.0", "1.1.0", False),  # v1 > v2 in minor
-        ("1.0.1", "1.0.2", True),  # v1 < v2 in patch
-        ("1.0.2", "1.0.1", False),  # v1 > v2 in patch
-
-        # Equal versions
-        ("1.0.0", "1.0.0", False),  # Identical
-        ("0.0.0", "0.0.0", False),  # Both zero
-
-        # Different lengths - shorter vs longer
-        ("1.0", "1.0.0", False),  # Should be equal (1.0 = 1.0.0)
-        ("1.0", "1.0.1", True),  # 1.0.0 < 1.0.1
-        ("1.2", "1.2.0", False),  # Should be equal (1.2 = 1.2.0)
-        ("1.2", "1.2.3", True),  # 1.2.0 < 1.2.3
-        ("2", "2.0.0", False),  # Should be equal (2 = 2.0.0)
-        ("2", "2.0.1", True),  # 2.0.0 < 2.0.1
-        ("1", "2.0", True),  # 1.0.0 < 2.0.0
-
-        # Different lengths - longer vs shorter
-        ("1.0.0", "1.0", False),  # Should be equal
-        ("1.0.1", "1.0", False),  # 1.0.1 > 1.0.0
-        ("1.2.0", "1.2", False),  # Should be equal
-        ("1.2.3", "1.2", False),  # 1.2.3 > 1.2.0
-        ("2.0.0", "2", False),  # Should be equal
-        ("2.0.1", "2", False),  # 2.0.1 > 2.0.0
-        ("2.0", "1", False),  # 2.0.0 > 1.0.0
-
-        # Mixed length comparisons
-        ("1.0", "2.0.0", True),  # 1.0.0 < 2.0.0
-        ("2.0", "1.0.0", False),  # 2.0.0 > 1.0.0
-        ("1", "1.0.1", True),  # 1.0.0 < 1.0.1
-        ("1.1", "1.0.9", False),  # 1.1.0 > 1.0.9
-
-        # Large numbers
-        ("1.9.9", "2.0.0", True),  # 1.9.9 < 2.0.0
-        ("10.0.0", "9.9.9", False),  # 10.0.0 > 9.9.9
-        ("1.10.0", "1.9.0", False),  # 1.10.0 > 1.9.0
-        ("1.2.10", "1.2.9", False),  # 1.2.10 > 1.2.9
-
-        # Sequential versions
-        ("1.0.0", "1.0.1", True),
-        ("1.0.1", "1.0.2", True),
-        ("1.0.9", "1.1.0", True),
-        ("1.9.9", "2.0.0", True),
-
-        # Null/None cases
-        (None, "1.0.0", False),  # v1 is None
-    ]
-
-    for v1, v2, expected in test_cases:
-      self.assertEqual(
-          util.is_v1_prior_to_v2(v1=v1, v2=v2),
-          expected,
-          msg=f"Failed {v1} < {v2} == {expected}")
 
 
 if __name__ == '__main__':
